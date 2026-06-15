@@ -1,36 +1,47 @@
-# Technical Walkthrough & Architecture Document: Todo Application
+# Technical Walkthrough & Architecture Document: Todo & Project Group Application
 
-This document provides a comprehensive analysis of the architecture, data flows, execution cycles, and implementation patterns of the Todo Application.
+This document provides a comprehensive analysis of the architecture, data flows, execution cycles, and implementation patterns of the Collaborative Todo & Project Group Application.
 
 ---
 
 ## 1. Application Overview
 
 ### Purpose
-The Todo Application is a secure, multi-user web-based task management platform. It allows users to register, log in, create tasks, view tasks with filters and pagination, edit task details, toggle completion status, and delete tasks.
+The Project Group & Todo Application is a secure, multi-user, collaborative task management platform. It allows users to organize their activities into project groups, create detailed checklists of subtasks, set deadlines, track dynamic project health statuses, and collaborate with other users using permission roles (OWNER, EDIT, VIEW).
 
 ### Main Features
 1. **User Authentication**: Secure registration and login workflows using client-side JWT persistence and server-side bcrypt password hashing.
-2. **Task CRUD Operations**: Creation, reading, updating, and deletion of user-specific tasks.
-3. **Advanced Filtering & Pagination**: Search queries, status filtering (all, completed, pending), and server-side pagination to minimize database load.
-4. **Optimistic Updates**: Immediate UI updates upon completion-toggling and task deletion, with a revert mechanism on network failure.
-5. **Global Error Handling**: Centralized recovery and client-side error notifications (Toast messages).
+2. **Project Groups Management**: CRUD operations for parent task groups containing titles, descriptions, and overall project deadlines.
+3. **Subtask Checklists**: Fine-grained checklists under groups with individual deadlines and completion states.
+4. **Dynamic Progress & Health Tracking**: 
+   - Real-time progress percentage based on completed subtasks.
+   - Dynamic health status computation (`COMPLETED`, `ON_TRACK`, `AT_RISK`, `OVERDUE`) based on remaining days, completion, and overdue subtask alerts.
+5. **Collaborative Sharing & Permission Roles**:
+   - **OWNER**: Full group control, share management, metadata updates, and subtask administration.
+   - **EDIT** (Editor): Can view groups, add subtasks, edit subtasks, and toggle status.
+   - **VIEW** (Viewer): Read-only checklist and metadata access.
+6. **Summary Dashboards**: Dashboard categorization into personal ("My Groups") and shared ("Shared With Me") project boards with real-time status counters.
+7. **Filters & Sorting**: Advanced search queries, status filtering (active, completed, overdue, due today, due this week), and sorting methods (date created, deadline, progress, recent update).
 
 ### Technologies Used
-* **Frontend**: React (v18), Vite, React Router DOM (v6), Axios, Lucide React (icons), and CSS Modules for isolated component styling.
+* **Frontend**: React (v18), Vite, React Router DOM (v6), Axios, Lucide React (icons), and CSS Modules for styling.
 * **Backend**: Go (Golang), Gin Gonic (web framework), GORM (Object Relational Mapper), and Go-JWT (`github.com/golang-jwt/jwt/v5`).
-* **Database**: MySQL.
-* **Security & Utility**: Bcrypt password hashing, JWT authentication, and dotenv configuration management.
+* **Database**: MySQL with GORM-based auto-migrations.
+* **Testing**: Go unit test suite for service validation.
 
 ### High-Level Architecture
-The application is built using a decoupled Client-Server architecture:
-* **Presentation Layer (Frontend)**: SPA built in React that routes views, manages global authentication context, coordinates API requests, and executes state updates.
-* **API Routing & Middleware Layer (Backend)**: Gin router exposes endpoints, routes CORS request configurations, handles global error recovery, and runs JWT validation.
-* **Business Logic Layer (Services)**: Services contain application logic, validations, normalization, and coordinate database queries.
-* **Data Access Layer (Repositories)**: Encapsulated GORM repositories executing queries against the MySQL Database.
+The application is built using a decoupled Client-Server architecture composed of the following layers:
+
+1. **Presentation Layer (Frontend SPA)**: A single-page application built in React. It renders views, coordinates page navigation, maintains global authentication state, captures user input actions, performs client-side form validations, manages local state, and fires API requests.
+2. **API Routing & Middleware Layer (Backend)**: Exposes endpoints using the Gin Gonic framework. This layer intercepts incoming HTTP traffic, manages CORS settings, logs requests (Logger), recovers from runtime crashes (Recovery), and authenticates JWT tokens (Auth Middleware) before allowing access to protected handlers.
+3. **Controller Layer (Backend)**: Serves as the entry gate to the backend logic. It parses route parameters and query strings, deserializes incoming JSON payloads into Go structs, performs basic payload constraint validation, invokes business services, and constructs standard, structured JSON responses (success/failure) for the client.
+4. **Business Logic Layer (Services)**: Houses the core business rules and calculations of the application. It validates logic boundaries (such as ensuring deadline times are not in the past), resolves permission roles relative to resources (checking if a user is OWNER, EDIT, or VIEW), updates project progress levels, and orchestrates repository actions.
+5. **Data Access / Repository Layer (Backend)**: Provides clean data-access abstractions using GORM. This layer isolates SQL logic from business code, running database actions (insertions, counts, queries, preloading relationships, cascading deletions, and ordering rules) against the MySQL database.
+6. **Database Layer**: A MySQL database containing tables, unique indices, and foreign key constraints to securely persist user accounts, groups, checklist subtasks, and collaborative sharing mappings.
+
 
 ```mermaid
-graph TD
+  graph TD
     subgraph Client [Frontend SPA]
         React[React Components] --> AuthCtx[AuthContext]
         React --> API[Axios Client /api.js]
@@ -38,9 +49,9 @@ graph TD
     subgraph Server [Go Backend]
         API --> Gin[Gin Router / routes.go]
         Gin --> Middlewares[CORS / Logger / Error Recovery / Auth Middleware]
-        Middlewares --> Controllers[Controllers: Auth / Todo]
-        Controllers --> Services[Services: Auth / Todo]
-        Services --> Repos[Repositories: User / Todo]
+        Middlewares --> Controllers[Controllers: Auth / Group / Subtask / Share]
+        Controllers --> Services[Services: Auth / TodoService]
+        Services --> Repos[Repositories: User / Todo / GroupShare]
     end
     subgraph DB [Database Layer]
         Repos --> MySQL[(MySQL DB)]
@@ -58,43 +69,57 @@ Here is the directory structure analysis detailing the purpose and files of each
 * [docker-compose.yml](file:///d:/Todo%20KreditBee/docker-compose.yml): **Responsibility**: Orchestration configuration. Coordinates the MySQL database (`db`), Go REST API (`backend`), and React frontend server (`frontend`) in an isolated network environment.
 
 ### Backend Structure (`/backend`)
-* [Dockerfile](file:///d:/Todo%20KreditBee/backend/Dockerfile): **Responsibility**: Docker image recipe. Uses a multi-stage process to compile the Golang source code into a static binary and run it in a clean Alpine container.
+* [Dockerfile](file:///d:/Todo%20KreditBee/backend/Dockerfile): Uses a multi-stage process to compile the Golang source code into a static binary and run it in a clean Alpine container.
+* [go.mod](file:///d:/Todo%20KreditBee/backend/go.mod): Lists Go module configurations and dependencies.
 * [cmd/main.go](file:///d:/Todo%20KreditBee/backend/cmd/main.go): **Responsibility**: Application entry point. Loads config, establishes the MySQL database pool, auto-migrates tables, sets up router endpoints, and fires up the server.
 * [config/config.go](file:///d:/Todo%20KreditBee/backend/config/config.go): **Responsibility**: Configuration loader. Parses environment variables and maps them to a global config struct configuration.
-* [database/mysql.go](file:///d:/Todo%20KreditBee/backend/database/mysql.go): **Responsibility**: Database connectivity module. Connects to MySQL using GORM driver and performs schema auto-migration.
-* [database/schema.sql](file:///d:/Todo%20KreditBee/backend/database/schema.sql): **Responsibility**: Explicit MySQL DDL schema specifying indices, key constraints, and tables.
-* [database/seed.sql](file:///d:/Todo%20KreditBee/backend/database/seed.sql): **Responsibility**: SQL script to populate database with demo users and tasks.
+* [database/mysql.go](file:///d:/Todo%20KreditBee/backend/database/mysql.go): **Responsibility**: Database connectivity module. Connects to MySQL using GORM driver, performs cleanups of old categorization schemas, and executes schema auto-migration.
+* [database/schema.sql](file:///d:/Todo%20KreditBee/backend/database/schema.sql): **Responsibility**: Reference MySQL DDL schema specifying indices, key constraints, and tables.
+* [database/seed.sql](file:///d:/Todo%20KreditBee/backend/database/seed.sql): **Responsibility**: SQL script to populate database with demo users, group tasks, and subtasks.
+* [database/migrations/](file:///d:/Todo%20KreditBee/backend/database/migrations/): Database migrations structure.
+  - [000001_create_users_table.up.sql](file:///d:/Todo%20KreditBee/backend/database/migrations/000001_create_users_table.up.sql)
+  - [000001_create_users_table.down.sql](file:///d:/Todo%20KreditBee/backend/database/migrations/000001_create_users_table.down.sql)
+  - [000002_create_todos_table.up.sql](file:///d:/Todo%20KreditBee/backend/database/migrations/000002_create_todos_table.up.sql)
+  - [000002_create_todos_table.down.sql](file:///d:/Todo%20KreditBee/backend/database/migrations/000002_create_todos_table.down.sql)
+  - [000003_create_group_shares_table.up.sql](file:///d:/Todo%20KreditBee/backend/database/migrations/000003_create_group_shares_table.up.sql)
+  - [000003_create_group_shares_table.down.sql](file:///d:/Todo%20KreditBee/backend/database/migrations/000003_create_group_shares_table.down.sql)
 * [models/user.go](file:///d:/Todo%20KreditBee/backend/models/user.go): **Responsibility**: Defines the GORM and JSON mappings for the [User](file:///d:/Todo%20KreditBee/backend/models/user.go) struct.
-* [models/todo.go](file:///d:/Todo%20KreditBee/backend/models/todo.go): **Responsibility**: Defines the GORM and JSON mappings for the [Todo](file:///d:/Todo%20KreditBee/backend/models/todo.go) struct.
+* [models/todo.go](file:///d:/Todo%20KreditBee/backend/models/todo.go): **Responsibility**: Defines the GORM mappings for the [Todo](file:///d:/Todo%20KreditBee/backend/models/todo.go) struct, which represents both a Group and a Subtask through self-referential parent key relationships.
+* [models/group_share.go](file:///d:/Todo%20KreditBee/backend/models/group_share.go): **Responsibility**: Defines the GORM schema mapping for collaborative sharing permissions ([GroupShare](file:///d:/Todo%20KreditBee/backend/models/group_share.go)).
 * [middleware/auth_middleware.go](file:///d:/Todo%20KreditBee/backend/middleware/auth_middleware.go): **Responsibility**: Authorization gatekeeper. Extracts Bearer token, validates claims, and injects user identity into Gin context.
 * [middleware/error_middleware.go](file:///d:/Todo%20KreditBee/backend/middleware/error_middleware.go): **Responsibility**: Global panic recovery. Catches unhandled runtime panics and converts them to standard 500 JSON errors.
 * [middleware/logger_middleware.go](file:///d:/Todo%20KreditBee/backend/middleware/logger_middleware.go): **Responsibility**: API Request logger recording HTTP status, path, latency, method, and IP.
-* [controllers/auth_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/auth_controller.go): **Responsibility**: HTTP handler wrapper for authentication. Binds incoming payload inputs and triggers Auth services.
-* [controllers/todo_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/todo_controller.go): **Responsibility**: HTTP handlers for task operations, query parser for pagination/searches, and payload binding.
+* [controllers/auth_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/auth_controller.go): **Responsibility**: HTTP handler wrapper for authentication. Binds registration and login payloads and triggers authentication services.
+* [controllers/group_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/group_controller.go): **Responsibility**: HTTP handler for project group CRUD actions.
+* [controllers/subtask_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/subtask_controller.go): **Responsibility**: HTTP handler for checklist subtask actions.
+* [controllers/share_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/share_controller.go): **Responsibility**: HTTP handler for sharing administration (invites, user searches, revoking members).
 * [services/auth_service.go](file:///d:/Todo%20KreditBee/backend/services/auth_service.go): **Responsibility**: Enforces password requirements, validates format bounds, checks duplicates, and coordinates hashing/token issuing.
-* [services/todo_service.go](file:///d:/Todo%20KreditBee/backend/services/todo_service.go): **Responsibility**: Business logic wrapper around task management, validation, and user ownership validation.
+* [services/todo_service.go](file:///d:/Todo%20KreditBee/backend/services/todo_service.go): **Responsibility**: Business logic wrapper around group and subtask checklists management, permission role evaluations, progress calculation, and health indicators updates.
+* [services/todo_service_test.go](file:///d:/Todo%20KreditBee/backend/services/todo_service_test.go): **Responsibility**: Service test suite checking deadline progress, health status logic, and days calculations.
 * [repositories/user_repository.go](file:///d:/Todo%20KreditBee/backend/repositories/user_repository.go): **Responsibility**: Direct database operations for querying and persisting users.
-* [repositories/todo_repository.go](file:///d:/Todo%20KreditBee/backend/repositories/todo_repository.go): **Responsibility**: Database queries for tasks including pagination math, filters, searches, updates, and deletes.
+* [repositories/todo_repository.go](file:///d:/Todo%20KreditBee/backend/repositories/todo_repository.go): **Responsibility**: Database queries for tasks and subtasks including sorting rules, status filters, and preloads.
+* [repositories/group_share_repository.go](file:///d:/Todo%20KreditBee/backend/repositories/group_share_repository.go): **Responsibility**: Coordinates membership count lookups, shared group queries, and share definitions.
 * [routes/routes.go](file:///d:/Todo%20KreditBee/backend/routes/routes.go): **Responsibility**: Declares paths, sets CORS policy, executes dependency injection, and connects controllers to routes.
 * [utils/jwt.go](file:///d:/Todo%20KreditBee/backend/utils/jwt.go): **Responsibility**: Signs HS256 tokens and decodes claims.
 * [utils/password.go](file:///d:/Todo%20KreditBee/backend/utils/password.go): **Responsibility**: Bcrypt wrapper for encryption and verification checks.
 
 ### Frontend Structure (`/frontend`)
-* [Dockerfile](file:///d:/Todo%20KreditBee/frontend/Dockerfile): **Responsibility**: Docker image recipe. Builds the production bundle of the React app using Node environment and packages it inside an Nginx container.
+* [Dockerfile](file:///d:/Todo%20KreditBee/frontend/Dockerfile): Builds the production bundle of the React app using Node environment and packages it inside an Nginx container.
 * [nginx.conf](file:///d:/Todo%20KreditBee/frontend/nginx.conf): **Responsibility**: Nginx configuration. Handles frontend static asset delivery and redirects SPA routes to `index.html`.
 * [main.jsx](file:///d:/Todo%20KreditBee/frontend/src/main.jsx): React mounting execution node.
 * [App.jsx](file:///d:/Todo%20KreditBee/frontend/src/App.jsx): Declares page routes, defines public vs protected pathways, and sets Layout wrapper boundaries.
 * [index.css](file:///d:/Todo%20KreditBee/frontend/src/index.css): Core global typography, custom scrollbars, spin animations, and foundational design rules.
 * [context/AuthContext.jsx](file:///d:/Todo%20KreditBee/frontend/src/context/AuthContext.jsx): Context API provider managing user authentication state, logins, registrations, and logouts.
 * [services/api.js](file:///d:/Todo%20KreditBee/frontend/src/services/api.js): Configure axios client, adds authentication headers globally via request interceptors, and redirects user to login on 401s via response interceptors.
-* `components/ProtectedRoute.jsx`: Gated entry component that evaluates authentication status and redirects guest accesses to `/login`.
-* `components/Layout/Layout.jsx`: Application layout structure featuring a sidebar navigation, header context, mobile navigation drawer, and slot content injection.
-* `components/Toast/Toast.jsx`: Time-dismissed, stylized banner component indicating success or failure events.
-* `pages/Login/LoginPage.jsx`: User entry credentials form with client-side validation logic.
-* `pages/Register/RegisterPage.jsx`: Direct account registration page validating password matches and text inputs.
-* `pages/Dashboard/DashboardPage.jsx`: Task control panel implementing search input debouncing, status filters, lists of task cards, and pagination controls.
-* `pages/TodoForm/TodoFormPage.jsx`: Shared form supporting both creation and update phases. Uses parameters to toggle between create and edit mode.
-* `pages/Profile/ProfilePage.jsx`: Renders user details from global state.
+* [components/ProtectedRoute.jsx](file:///d:/Todo%20KreditBee/frontend/src/components/ProtectedRoute.jsx): Gated entry component that evaluates authentication status and redirects guest accesses to `/login`.
+* [components/Layout/Layout.jsx](file:///d:/Todo%20KreditBee/frontend/src/components/Layout/Layout.jsx): Application layout structure featuring a sidebar navigation, header context, mobile navigation drawer, and slot content injection.
+* [components/Toast/Toast.jsx](file:///d:/Todo%20KreditBee/frontend/src/components/Toast/Toast.jsx): Time-dismissed, stylized banner component indicating success or failure events.
+* [pages/Login/LoginPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Login/LoginPage.jsx): User entry credentials form with client-side validation logic.
+* [pages/Register/RegisterPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Register/RegisterPage.jsx): Direct account registration page validating password matches and text inputs.
+* [pages/Dashboard/DashboardPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Dashboard/DashboardPage.jsx): Group overview console containing summary status widgets, search inputs, active sorting selectors, and list sections for owned and shared projects.
+* [pages/TodoForm/TodoFormPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/TodoForm/TodoFormPage.jsx): Shared form supporting both creation and update phases of project groups.
+* [pages/Groups/GroupDetailsPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Groups/GroupDetailsPage.jsx): Checklist space. Visualizes deadlines alarms, checklists filters, subtask creation/editing controls, progress bars, and collaborative sharing actions modal.
+* [pages/Profile/ProfilePage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Profile/ProfilePage.jsx): Renders user details from global state.
 
 ---
 
@@ -105,16 +130,16 @@ Here is the directory structure analysis detailing the purpose and files of each
 2. **Provider Wrapping**: [main.jsx](file:///d:/Todo%20KreditBee/frontend/src/main.jsx) mounts `<App />` within `React.StrictMode`.
 3. **Context Bootstrapping**: [App.jsx](file:///d:/Todo%20KreditBee/frontend/src/App.jsx) establishes `<BrowserRouter>` and wraps it inside `<AuthProvider>` from [AuthContext.jsx](file:///d:/Todo%20KreditBee/frontend/src/context/AuthContext.jsx).
 4. **Token Check**: `<AuthProvider>` triggers its `useEffect` hook:
-   * It checks `localStorage` for `token` and `user` data.
-   * If both are present, it updates the state `user` using `setUser(JSON.parse(storedUser))`.
-   * It sets the `loading` state to `false`.
+   - It checks `localStorage` for `token` and `user` data.
+   - If both are present, it updates the state `user` using `setUser(JSON.parse(storedUser))`.
+   - It sets the `loading` state to `false`.
 
 ### Routing Flow
 * Public paths `/login` and `/register` bypass authorization gates.
-* Protected paths `/`, `/create`, `/edit/:id`, and `/profile` are enclosed by `<ProtectedRoute>` and `<Layout>`:
-  * If `loading` is true, `<ProtectedRoute>` renders a loading spinner.
-  * If `user` is null, it renders `<Navigate to="/login" replace />`.
-  * If `user` is authenticated, it mounts the page components inside `<Layout>`.
+* Protected paths `/`, `/groups`, `/groups/:id`, `/create`, `/edit/:id`, and `/profile` are enclosed by `<ProtectedRoute>` and `<Layout>`:
+  - If `loading` is true, `<ProtectedRoute>` renders a loading spinner.
+  - If `user` is null, it renders `<Navigate to="/login" replace />`.
+  - If `user` is authenticated, it mounts the page components inside `<Layout>`.
 
 ### Authentication Flow
 1. **Validation & Request**: When credentials are submitted via [LoginPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Login/LoginPage.jsx), it triggers `login(email, password)` in [AuthContext.jsx](file:///d:/Todo%20KreditBee/frontend/src/context/AuthContext.jsx).
@@ -125,7 +150,7 @@ Here is the directory structure analysis detailing the purpose and files of each
 ### State Management Flow
 * **Global Auth State**: Managed in [AuthContext.jsx](file:///d:/Todo%20KreditBee/frontend/src/context/AuthContext.jsx) via React context hook.
 * **Local Component State**: Managed via standard `useState` hooks for search filters, forms, loadings, alerts, and pages.
-* **Sync Strategy**: Fetch triggers are executed by page hooks reacting to variable changes (e.g. page or search filters change in Dashboard).
+* **Sync Strategy**: Fetch triggers are executed by page hooks reacting to variable changes (e.g. search term, sorting parameter, or status filter update in Dashboard).
 
 ### API Communication Flow
 * Utilizes [api.js](file:///d:/Todo%20KreditBee/frontend/src/services/api.js) wrapper for all endpoints.
@@ -138,73 +163,60 @@ Here is the directory structure analysis detailing the purpose and files of each
 
 #### 1. Login Page
 * **User Actions**: User types email/password, submits form, or clicks registration link.
-* **Validation**:
-  * Mandatory field presence checks.
-  * Basic regex verification (`/\S+@\S+\.\S+/`) for email formats.
+* **Validation**: Mandatory field checks; basic regex verification for email formats.
 * **API Requests**: Triggers `POST /api/auth/login` containing `email` and `password`.
-* **State Updates**:
-  * Form field states updated via `onChange`.
-  * Form validation errors written to `errors` state object.
-  * `loading` toggled true during transit.
-  * Successful authentications update the global `user` context.
-* **Navigation**: On success, redirects user to `/`. On validation error or failure, displays Toast notification.
+* **State Updates**: Updates input fields, handles validation errors list, and updates global user states.
 
 #### 2. Register Page
 * **User Actions**: Fills out registration form (name, email, password, and confirmation).
-* **Validation**:
-  * Verifies non-empty name.
-  * Validates email format.
-  * Ensures password is at least 8 characters.
-  * Matches `password` against `confirmPassword`.
-* **API Requests**: Calls `POST /api/auth/register` with `name`, `email`, and `password`.
-* **State Updates**:
-  * Local form values updated.
-  * Errors populated on mismatch.
+* **Validation**: Verifies non-empty name, email format, minimum 8 characters password, and matching password strings.
+* **API Requests**: Calls `POST /api/auth/register`.
 * **Navigation**: Upon successful creation, triggers success Toast and navigates user to `/login` after a `1.5s` delay.
 
 #### 3. Dashboard
 * **User Actions**:
-  * Type in search box (triggers debounced execution after 300ms).
-  * Toggle completion checkboxes.
-  * Click task edit/delete buttons.
-  * Click page pagination controls.
-  * Filter list by all, completed, or pending tasks.
+  - Type search query (debounced execution after 300ms).
+  - Select status filters (all, active, completed, overdue, due-today, due-this-week).
+  - Select sorting rules (deadline, deadline-desc, updated, progress, default date created).
+  - Delete or edit owned groups.
+  - Click summary cards to quickly toggle status filters.
 * **API Requests**:
-  * `GET /api/todos?page=...&limit=...&completed=...&search=...` (fetches tasks).
-  * `PATCH /api/todos/:id/complete` (toggles task status).
-  * `DELETE /api/todos/:id` (removes task).
+  - `GET /api/groups?...` (fetches owned groups).
+  - `GET /api/shared-groups?...` (fetches shared groups).
+  - `DELETE /api/groups/:id` (removes group, OWNER only).
 * **State Updates**:
-  * `todos` and `totalCount` are updated from API response.
-  * Optimistic UI updates update local lists instantly for deletes and status changes, reverting back via `fetchTodos()` if the API request fails.
-* **Navigation**: Edit click redirects to `/edit/:id`. Create Task redirects to `/create`.
+  - `myGroups` and `sharedGroups` lists loaded from API responses.
+  - Count widgets updated with status counters.
+  - Optimistic UI updates remove deleted groups immediately, reverting on network failure.
 
-#### 4. Create Todo Page
-* **User Actions**: Types task title and description, clicks "Create Task", or clicks "Back".
-* **Validation**: Title presence validation (cannot be empty).
-* **API Requests**: `POST /api/todos` with body containing `{ title, description }`.
-* **State Updates**:
-  * Local input values updated.
-  * Errors updated on validation check failure.
-  * `loading` set to true during submit execution.
-* **Navigation**: Redirects back to `/` after 1 second of successful creation.
+#### 4. Create / Edit Group Page
+* **User Actions**: Modifies group details (title, description, due date) and submits or returns.
+* **Validation**: Title is mandatory. Date must be valid.
+* **API Requests**: 
+  - `GET /api/groups/:id` on mount (if editing) to pre-fill inputs.
+  - `POST /api/groups` (if creating) or `PUT /api/groups/:id` (if editing) to submit.
+* **Navigation**: Redirects back to dashboard after 1 second on success.
 
-#### 5. Edit Todo Page
-* **User Actions**: Modifies title or description, clicks "Save Changes".
-* **Validation**: Title is required.
+#### 5. Group Details Page (Project checklist workspace)
+* **User Actions**:
+  - Toggle filters to view subtask checklists (All, Active, Completed).
+  - Click "Add New Subtask" button, fill values, and submit.
+  - Click checkbox on subtask card to toggle complete/active.
+  - Click Edit/Delete subtask buttons.
+  - Click "Share Group" to open sharing panel, search users by keyword, add collaborators with roles, or revoke access.
 * **API Requests**:
-  * `GET /api/todos/:id` on mount to pre-fill inputs.
-  * `PUT /api/todos/:id` on submit with updated values.
+  - `GET /groups/:id` (loads group details, subtasks, user permissions).
+  - `GET /groups/:id/members` (loads shared collaborators).
+  - `POST /groups/:id/tasks` (adds subtask).
+  - `PUT /tasks/:id` (updates subtask).
+  - `DELETE /tasks/:id` (deletes subtask).
+  - `PATCH /tasks/:id/complete` (toggles subtask status).
+  - `GET /users?search=...` (searches collaborative targets).
+  - `POST /groups/:id/share` (adds collaborative target).
+  - `DELETE /groups/:id/share/:userId` (revokes access).
 * **State Updates**:
-  * `fetching` set to true while loading initial details.
-  * Pre-fills local form inputs with fetched data.
-  * Updates form fields on typing.
-* **Navigation**: Returns to dashboard on successful save or if the todo fails to load.
-
-#### 6. Profile Page
-* **User Actions**: Navigate to page to view user details.
-* **Validation**: None (read-only presentation).
-* **API Requests**: None (reads profile context populated at authentication).
-* **State Updates**: Reads static values `name`, `email`, and `id` directly from `AuthContext`.
+  - Recalculates total, completed, and progress values locally for immediate UI updates, falling back on database values if api calls fail.
+  - Renders alert banners for approaching deadlines and overdue checklist items.
 
 ---
 
@@ -214,99 +226,81 @@ This section outlines how requests map through the backend.
 
 ### Request Pipeline Stages
 1. **Entry**: Router matches request pattern defined in [routes.go](file:///d:/Todo%20KreditBee/backend/routes/routes.go).
-2. **Global Middlewares**:
-   * Logs HTTP metadata using [LoggerMiddleware](file:///d:/Todo%20KreditBee/backend/middleware/logger_middleware.go).
-   * Catches runtime panic events using [ErrorRecoveryMiddleware](file:///d:/Todo%20KreditBee/backend/middleware/error_middleware.go).
-   * Sets CORS headers on response.
-3. **Route-Specific Middleware**: Authenticated routes pass through [AuthMiddleware](file:///d:/Todo%20KreditBee/backend/middleware/auth_middleware.go). This middleware validates the JWT and sets the `userID` value in the Gin context.
-4. **Controller Routing**: Matches endpoint path and passes command inputs into controller action methods (e.g. `todoController.GetTodos`).
-5. **Payload Bindings**: Handlers parse query params or parse JSON payloads into structured structs (e.g. `TodoInput`).
-6. **Service Layer Execution**: Controllers delegate execution tasks to the services layer (e.g. `TodoService`).
+2. **Global Middlewares**: Logger records request, Error recovery catches panics, and CORS sets headers.
+3. **Route-Specific Middleware**: Authenticated routes pass through [AuthMiddleware](file:///d:/Todo%20KreditBee/backend/middleware/auth_middleware.go) to validate JWT and inject user ID.
+4. **Controller Routing**: Matches route to handler wrapper methods (e.g. `groupController.GetGroups`).
+5. **Payload Bindings**: Handlers parse query params or bind JSON payloads into typed structs.
+6. **Service Layer Execution**: Controllers delegate execution tasks to the services layer (`todoService`), which performs validation and evaluates user permissions.
 7. **Repository Execution**: The service delegates database actions to repositories using GORM interfaces.
 8. **Response Generation**: Controllers construct standard success or failure JSON payloads.
-9. **CORS/Logs Finalization**: The response is returned to the client and logged to stdout.
 
 ---
 
 ### Endpoint Detailed Workflow Analysis
 
-#### 1. `POST /api/auth/register`
-* **Route**: `/api/auth/register` -> `AuthController.Register`
-* **Middleware**: Logger, Recovery, CORS.
-* **Controller**: Parses JSON into `RegisterInput`. Performs field validation (required, email, min=8). Passes to `authService.Register`.
-* **Service**: Normalizes input (lowercases email). Verifies format using regex. Checks for existing users via `userRepo.FindByEmail`. Hashes password via `bcrypt`. Calls `userRepo.Create`.
-* **Repository**: Runs GORM insert command: `r.db.Create(user)`.
-* **DB Query**: `INSERT INTO users (name, email, password, created_at) VALUES (?, ?, ?, ?)`.
-* **Response**: Returns `201 Created` with success status and user data (excluding password).
+#### 1. `POST /api/groups`
+* **Route**: `/api/groups` -> `GroupController.CreateGroup`
+* **Controller**: Binds JSON into `GroupInput`. Calls `todoService.CreateGroup`.
+* **Service**: Validates that title is not empty and deadline is not in the past. Calls `todoRepo.Create`.
+* **Repository**: Runs GORM insert command: `r.db.Create(group)`.
+* **Response**: Returns `201 Created` with the new group struct.
 
-#### 2. `POST /api/auth/login`
-* **Route**: `/api/auth/login` -> `AuthController.Login`
-* **Middleware**: Logger, Recovery, CORS.
-* **Controller**: Binds JSON into `LoginInput`. Verifies email format with regexp. Calls `authService.Login`.
-* **Service**: Lowercases email. Fetches user from DB via `userRepo.FindByEmail`. Verifies password hash using bcrypt. Generates JWT with 24h expiration on success.
-* **Repository**: `r.db.Where("email = ?", email).First(&user)`.
-* **DB Query**: `SELECT * FROM users WHERE email = ? LIMIT 1`.
-* **Response**: Returns `200 OK` containing signed token string and user info object.
+#### 2. `GET /api/groups`
+* **Route**: `/api/groups` -> `GroupController.GetGroups`
+* **Controller**: Gathers search and status queries. Calls `todoService.GetGroups`.
+* **Service**: Fetches groups from `todoRepo.FindAllGroupsByUserID`. Iterates and runs `CalculateGroupHealth` for each group and counts collaborators from `groupShareRepo`.
+* **Response**: Returns `200 OK` with lists of groups.
 
-#### 3. `GET /api/todos`
-* **Route**: `/api/todos` -> `TodoController.GetTodos`
-* **Middleware**: Logger, Recovery, CORS, AuthMiddleware (extracts `userID` from Bearer token).
-* **Controller**: Extracts `userID` from context. Parses query filters: `completed`, `search`, `page`, `limit`. Calls `todoService.GetTodos`.
-* **Service**: Passes pagination arguments to `todoRepo.FindAllByUserID`.
-* **Repository**: Dynamically constructs SQL based on search and completion filters. Counts total tasks first, then queries page items using `limit` and `offset`.
-* **DB Query**:
-  * `SELECT count(*) FROM todos WHERE user_id = ? AND completed = ? AND (title LIKE ? OR description LIKE ?)`
-  * `SELECT * FROM todos WHERE user_id = ? AND completed = ? AND (title LIKE ? OR description LIKE ?) ORDER BY created_at desc LIMIT ? OFFSET ?`
-* **Response**: Returns `200 OK` containing matching tasks array and total items count.
+#### 3. `GET /api/groups/:id`
+* **Route**: `/api/groups/:id` -> `GroupController.GetGroupByID`
+* **Service**: Calls `GetPermission` helper service. Verifies user is owner or collaborator. Reads group and preloads subtasks. Updates progress and health. Returns permission level.
+* **Response**: Returns `200 OK` on success, `403 Forbidden` if unauthorized, or `404 Not Found` if missing.
 
-#### 4. `GET /api/todos/:id`
-* **Route**: `/api/todos/:id` -> `TodoController.GetTodoByID`
-* **Middleware**: Logger, Recovery, CORS, AuthMiddleware.
-* **Controller**: Parses ID parameter to unsigned integer. Passes ID to `todoService.GetTodoByID`.
-* **Service**: Fetches todo from repository. Validates task ownership: returns unauthorized error if `todo.UserID != userID`.
-* **Repository**: Fetches task via `todoRepo.FindByID`.
-* **DB Query**: `SELECT * FROM todos WHERE id = ? LIMIT 1`.
-* **Response**: Returns `200 OK` with task data on success, `404 Not Found` if task is missing, or `403 Forbidden` on ownership mismatch.
+#### 4. `PUT /api/groups/:id`
+* **Route**: `/api/groups/:id` -> `GroupController.UpdateGroup`
+* **Service**: Verifies permission role is `OWNER`. Updates title, description, due date. Calls `todoRepo.Update`.
+* **Response**: Returns `200 OK` with updated details.
 
-#### 5. `POST /api/todos`
-* **Route**: `/api/todos` -> `TodoController.CreateTodo`
-* **Middleware**: Logger, Recovery, CORS, AuthMiddleware.
-* **Controller**: Binds request body payload to `TodoInput`. Validates title presence. Calls `todoService.CreateTodo`.
-* **Service**: Creates a `Todo` model instance with `Completed` set to `false`. Calls `todoRepo.Create`.
-* **Repository**: Inserts the new record into the database.
-* **DB Query**: `INSERT INTO todos (title, description, completed, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`.
-* **Response**: Returns `201 Created` with the newly created todo object.
+#### 5. `DELETE /api/groups/:id`
+* **Route**: `/api/groups/:id` -> `GroupController.DeleteGroup`
+* **Service**: Verifies permission role is `OWNER`. Calls `todoRepo.Delete` which cascades delete to associated subtasks and share rules.
+* **Response**: Returns `200 OK` confirmation.
 
-#### 6. `PUT /api/todos/:id`
-* **Route**: `/api/todos/:id` -> `TodoController.UpdateTodo`
-* **Middleware**: Logger, Recovery, CORS, AuthMiddleware.
-* **Controller**: Parses route ID and JSON body payload. Calls `todoService.UpdateTodo`.
-* **Service**: Fetches existing todo to verify ownership. Updates title and description. Calls `todoRepo.Update`.
-* **Repository**: Persists modified record via `r.db.Save(todo)`.
-* **DB Query**: `UPDATE todos SET title = ?, description = ?, updated_at = ? WHERE id = ?`.
-* **Response**: Returns `200 OK` with updated todo data.
+#### 6. `POST /api/groups/:id/tasks`
+* **Route**: `/api/groups/:id/tasks` -> `SubtaskController.CreateSubtask`
+* **Service**: Verifies user is `OWNER` or `EDIT`. Validates deadline is not in past and doesn't exceed group's overall project deadline. Saves subtask with `parent_todo_id = id`. Triggers group health and progress recalculations.
+* **Response**: Returns `201 Created` with subtask data.
 
-#### 7. `DELETE /api/todos/:id`
-* **Route**: `/api/todos/:id` -> `TodoController.DeleteTodo`
-* **Middleware**: Logger, Recovery, CORS, AuthMiddleware.
-* **Controller**: Parses route ID. Calls `todoService.DeleteTodo`.
-* **Service**: Fetches task to verify ownership. Calls `todoRepo.Delete`.
-* **Repository**: Deletes record via `r.db.Delete(&Todo{}, id)`.
-* **DB Query**: `DELETE FROM todos WHERE id = ?`.
-* **Response**: Returns `200 OK` confirming deletion.
+#### 7. `PATCH /api/tasks/:id/complete`
+* **Route**: `/api/tasks/:id/complete` -> `SubtaskController.ToggleCompleteSubtask`
+* **Service**: Verifies user is `OWNER` or `EDIT`. Toggles subtask completion boolean. Saves subtask. Recalculates and updates parent group progress and health state.
+* **Response**: Returns `200 OK`.
 
-#### 8. `PATCH /api/todos/:id/complete`
-* **Route**: `/api/todos/:id/complete` -> `TodoController.ToggleCompleteTodo`
-* **Middleware**: Logger, Recovery, CORS, AuthMiddleware.
-* **Controller**: Parses ID. Calls `todoService.ToggleCompleteTodo`.
-* **Service**: Fetches existing todo to verify ownership. Toggles the `Completed` boolean state. Calls `todoRepo.Update`.
-* **Repository**: Saves modified todo.
-* **DB Query**: `UPDATE todos SET completed = ?, updated_at = ? WHERE id = ?`.
-* **Response**: Returns `200 OK` containing updated status.
+#### 8. `POST /api/groups/:id/share`
+* **Route**: `/api/groups/:id/share` -> `ShareController.ShareGroup`
+* **Service**: Verifies user is `OWNER`. Validates target collaborator email exists. Checks duplicate shares. Creates [GroupShare](file:///d:/Todo%20KreditBee/backend/models/group_share.go) mapping.
+* **Response**: Returns `201 Created` with share details.
 
 ---
 
-## 5. Authentication Workflow
+## 5. Collaborative Permission Levels
+
+The application enforces a precise role permission matrix:
+
+| Action / Capability | OWNER | EDIT (Editor) | VIEW (Viewer) |
+| :--- | :---: | :---: | :---: |
+| **Edit Group Title / Description** | Yes | No | No |
+| **Delete Project Group** | Yes | No | No |
+| **Add Checklist Subtask** | Yes | Yes | No |
+| **Edit Checklist Subtask** | Yes | Yes | No |
+| **Toggle Subtask Completion** | Yes | Yes | No |
+| **Delete Checklist Subtask** | Yes | No | No |
+| **Manage Group Sharing (Invite/Revoke)**| Yes | No | No |
+| **Read Project Group & Subtasks** | Yes | Yes | Yes |
+
+---
+
+## 6. Authentication Workflow
 
 ```mermaid
 sequenceDiagram
@@ -341,80 +335,10 @@ sequenceDiagram
 ```
 
 ### Authentication Core Mechanisms
-* **Password Hashing**: Uses `bcrypt.GenerateFromPassword` with `DefaultCost` (cost factor 10) in [password.go](file:///d:/Todo%20KreditBee/backend/utils/password.go) to hash passwords before database insertion.
-* **JWT Generation**: Generates standard HS256 tokens using [jwt.go](file:///d:/Todo%20KreditBee/backend/utils/jwt.go). The payload includes the authenticated `user_id` as a claim along with an expiry timestamp (`ExpiresAt`) set to 24 hours from issuance.
-* **JWT Token Validation**: The backend parses incoming tokens via `jwt.ParseWithClaims` with security signature validation against `JWTSecret`.
-* **Protected Routes Access Control**: The backend's [AuthMiddleware](file:///d:/Todo%20KreditBee/backend/middleware/auth_middleware.go) intercepts requests to `/api/todos/*`. It parses the HTTP `Authorization` header, extracts the `Bearer <token>` string, validates the token, and sets the parsed user ID in the request context using `c.Set("userID", claims.UserID)`. If the token is invalid or missing, it aborts the request pipeline with a `401 Unauthorized` response.
-* **Logout Handling**: Fully client-side operation. Clicking logout calls the `logout()` context function which deletes `'token'` and `'user'` keys from `localStorage` and updates the React user state to `null`. This state change immediately triggers `<ProtectedRoute>` to render a redirect back to `/login`.
-
----
-
-## 6. Todo Management Workflow
-
-This section traces the execution path of Todo-related operations across all layers.
-
-### 1. Create Todo Flow
-1. **User Action**: The user fills out the task form on `/create` and clicks submit.
-2. **Client Validation**: The frontend validates that the title is not empty.
-3. **API Request**: Axios sends a `POST` request to `/api/todos` containing the task title and description. The request automatically includes the authorization token in the headers via the request interceptor.
-4. **Backend Route & Middleware Validation**: The request is routed to `todoController.CreateTodo` after passing through `AuthMiddleware`.
-5. **Controller Binding**: Binds JSON payload inputs to `TodoInput` struct and validates title field.
-6. **Service Logic**: Instantiate a new `models.Todo` struct with target parameters and `Completed = false`. Passes execution to `todoRepo.Create`.
-7. **Repository Save**: `r.db.Create(todo)` executes query on MySQL instance.
-8. **Response Return**: Backend returns `201 Created` status with the new todo object.
-9. **UI Sync**: The client receives a success status, displays a Toast notification, and navigates back to `/`.
-
-### 2. Get Todos Flow
-1. **Mount/Filter Trigger**: Dashboard loads or query parameters (search query, completion filter, or page pagination) update.
-2. **API Request**: Frontend triggers Axios `GET` request to `/api/todos?page=...&limit=...&completed=...&search=...`.
-3. **Auth Middleware validation**: Context `userID` token claims validated.
-4. **Controller Processing**: Extracts `page` and `limit` from request parameters. Compares query strings to calculate database offsets: `(page - 1) * limit`.
-5. **Service Layer**: Delegated arguments parsed directly to repository.
-6. **Repository Queries**:
-   * Evaluates completion filter and searches variables to build a dynamic SQL query using `r.db.Model(&Todo{})`.
-   * Triggers `.Count(&total)` query.
-   * Executes `.Limit(limit).Offset(offset).Order("created_at desc").Find(&todos)` to fetch the current page of tasks.
-7. **Response**: Returns `200 OK` containing a list of tasks and the total count.
-8. **UI Rendering**: Dashboard updates state hooks, stops showing loading states, and renders task items.
-
-```
-+----------+      GET /api/todos?page=1      +------------+      Count & Fetch      +----------+
-| Frontend | ------------------------------> | Go Backend | ----------------------> | MySQL DB |
-|          | <------------------------------ |  (GORM)    | <---------------------- |          |
-+----------+        JSON Array + Total       +------------+     ResultSet & Count   +----------+
-```
-
-### 3. Update Todo Flow
-1. **Form Load**: Edit Page requests `GET /api/todos/:id` on mount to pre-fill form fields.
-2. **User Submit**: User modifies fields and submits.
-3. **API Request**: Triggers `PUT /api/todos/:id` with new title and description values.
-4. **Backend Middleware verification**: User claims validated via middleware.
-5. **Controller Processing**: Binds route param ID and JSON payload. Calls service layer.
-6. **Service Logic Validation**: Fetches task details from repository by ID and verifies task ownership: `todo.UserID == userID`. If correct, updates fields and calls `todoRepo.Update`.
-7. **Repository Execution**: Calls `r.db.Save(todo)`.
-8. **DB Update**: Updates the task title and description fields in the database.
-9. **Response**: Returns `200 OK` with updated todo data.
-10. **Navigation**: Frontend displays success Toast and redirects to dashboard.
-
-### 4. Toggle Status (Complete) Flow
-1. **User Action**: Clicking the checkbox on a task card triggers the toggle handler.
-2. **Optimistic UI Update**: The frontend immediately updates the local task list state to show the updated completion status before receiving the API response.
-3. **API Request**: Axios sends a `PATCH` request to `/api/todos/:id/complete`.
-4. **Backend Route Validation**: Handled by `todoController.ToggleCompleteTodo` after JWT authentication.
-5. **Ownership Check**: Service layer fetches the task, verifies ownership, and toggles the `Completed` boolean status field.
-6. **Repository Save**: Save updated record via `r.db.Save(todo)`.
-7. **Response**: Returns `200 OK` with updated task data.
-8. **Error Recovery**: If the API call fails, the client catches the error, displays an error Toast, and calls `fetchTodos()` to revert the checkbox to its previous state.
-
-### 5. Delete Todo Flow
-1. **User Action**: Clicking the trash icon triggers the delete handler. The user is prompted to confirm the deletion.
-2. **Optimistic UI Update**: The frontend instantly removes the task from the local state list.
-3. **API Request**: Axios sends a `DELETE` request to `/api/todos/:id`.
-4. **Backend Processing**: Handled by `todoController.DeleteTodo` after passing authentication middleware.
-5. **Service Layer validation**: Fetches target item, verifies ownership, and deletes record.
-6. **Repository Execution**: Deletes task via GORM: `r.db.Delete(&models.Todo{}, id)`.
-7. **Response**: Returns `200 OK` with success status.
-8. **Error Recovery**: If the API request fails, the client catches the error, displays an error Toast, and calls `fetchTodos()` to restore the deleted task to the list.
+* **Password Hashing**: Uses `bcrypt.GenerateFromPassword` with cost factor 10 in [password.go](file:///d:/Todo%20KreditBee/backend/utils/password.go) before DB insertions.
+* **JWT Generation**: Signs HS256 tokens in [jwt.go](file:///d:/Todo%20KreditBee/backend/utils/jwt.go). Payload includes the authenticated user ID and a 24-hour expiry timestamp.
+* **JWT Token Validation**: Evaluates incoming tokens using `jwt.ParseWithClaims` against `JWTSecret`.
+* **Access Control**: Backend's [AuthMiddleware](file:///d:/Todo%20KreditBee/backend/middleware/auth_middleware.go) intercepts routes. It extracts token claims, injects `userID` to context, or returns `401 Unauthorized` on failure.
 
 ---
 
@@ -436,28 +360,38 @@ CREATE TABLE IF NOT EXISTS `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-#### `todos` Table
+#### `todos` Table (Handles Groups and Subtasks)
 ```sql
 CREATE TABLE IF NOT EXISTS `todos` (
     `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     `title` VARCHAR(255) NOT NULL,
     `description` TEXT,
     `completed` BOOLEAN DEFAULT FALSE,
+    `due_date` TIMESTAMP DEFAULT NULL,
     `user_id` INT UNSIGNED NOT NULL,
+    `parent_todo_id` INT UNSIGNED DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT `fk_todos_users` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+    CONSTRAINT `fk_todos_users` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_todos_parent` FOREIGN KEY (`parent_todo_id`) REFERENCES `todos` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-### Table Relationships
-* **Relationship**: One-to-Many relationship between `users` and `todos`. A single user can have multiple tasks, while each task belongs to exactly one user.
-* **Foreign Key**: `todos.user_id` references `users.id`.
-* **Constraint**: `ON DELETE CASCADE` is set on the foreign key relationship. Deleting a user automatically deletes all associated tasks in the database to prevent orphaned records.
-* **Indexes**:
-  * Unique index `idx_users_email` on `users(email)` for fast logins and to prevent duplicate registrations.
-  * Index `idx_todos_user_id` on `todos(user_id)` for quick task lookups by user ID.
-  * Index `idx_todos_completed` on `todos(completed)` to optimize task filtering by status.
+#### `group_shares` Table
+```sql
+CREATE TABLE IF NOT EXISTS `group_shares` (
+    `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `group_id` INT UNSIGNED NOT NULL,
+    `owner_id` INT UNSIGNED NOT NULL,
+    `shared_with_user_id` INT UNSIGNED NOT NULL,
+    `permission` VARCHAR(50) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `idx_group_share_unique` (`group_id`, `shared_with_user_id`),
+    CONSTRAINT `fk_group_shares_group` FOREIGN KEY (`group_id`) REFERENCES `todos` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_group_shares_owner` FOREIGN KEY (`owner_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_group_shares_target` FOREIGN KEY (`shared_with_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
 
 ---
 
@@ -475,7 +409,7 @@ const API = axios.create({
 ```
 
 ### Interceptors
-* **Request Interceptor**: Checks if a JWT token is stored in local storage and automatically attaches it to the request headers:
+* **Request Interceptor**: Checks if a JWT token is stored in local storage and automatically attaches it to request headers:
   ```javascript
   API.interceptors.request.use((config) => {
     const token = localStorage.getItem('token');
@@ -485,51 +419,9 @@ const API = axios.create({
     return config;
   });
   ```
-* **Response Interceptor**: Intercepts responses and simplifies API error handling:
-  * On success: Returns `response.data` directly to simplify data access in components.
-  * On error:
-    * Intercepts `401 Unauthorized` responses (indicating expired or invalid tokens), clears local storage, and redirects the user to the login page (`window.location.href = '/login'`).
-    * Rejects other API errors with a descriptive error message from the backend response.
-
----
-
-### Step-by-Step API Request Trace (Toggle Completion Status)
-
-Here is a trace of the toggle status request from the client's click action to the database update:
-
-```
-[UI Checkbox Clicked]
-        │
-        ▼ (Optimistic UI Update: Local list updated immediately)
-[Axios Client: api.js]
-        │ (Appends "Authorization: Bearer <token>" header)
-        ▼ (Sends PATCH request to "/api/todos/:id/complete")
-[Go Server: main.go]
-        │ (Logger & Error middlewares process request)
-        ▼
-[AuthMiddleware]
-        │ (Parses JWT from header & validates claims)
-        ▼ (Sets "userID" in Gin context)
-[TodoController.ToggleCompleteTodo]
-        │ (Parses task ID parameter from route)
-        ▼
-[TodoService.ToggleCompleteTodo]
-        │ (Fetches task & verifies ownership: todo.UserID == userID)
-        ▼ (Toggles completed boolean value)
-[TodoRepository.Update]
-        │
-        ▼ (Executes GORM save query)
-[MySQL DB Engine]
-        │ (Executes: UPDATE todos SET completed = 1, updated_at = NOW() WHERE id = 12)
-        ▼
-[Go Server: Return Response]
-        │ (Returns JSON: {"success": true, "message": "...", "data": {...}})
-        ▼
-[Axios Client: Interceptor]
-        │ (Resolves promise with response data)
-        ▼
-[UI View Updated]
-```
+* **Response Interceptor**: Simplifying data retrieval:
+  - On success: Returns `response.data` directly.
+  - On error: Intercepts `401 Unauthorized` responses, clears credentials, and redirects user to the login page (`window.location.href = '/login'`).
 
 ---
 
@@ -537,96 +429,42 @@ Here is a trace of the toggle status request from the client's click action to t
 
 ### Global State vs. Local Component State
 
-The application splits state between global context and local component states to ensure separation of concerns:
-
 | State Scope | Managed By | Fields / State Variables | Key Components Using It |
 | :--- | :--- | :--- | :--- |
 | **Global Auth State** | `AuthContext` | `user` (object), `loading` (boolean) | `ProtectedRoute`, `Layout`, `LoginPage`, `RegisterPage` |
-| **Local Dashboard State** | `DashboardPage` | `todos` (array), `search` (string), `statusFilter` (string), `currentPage` (number) | `DashboardPage` |
-| **Local Form State** | `TodoFormPage` | `formData` (title, description), `errors` (object), `fetching` (boolean) | `TodoFormPage` |
-
-### Data Flow Diagram
-
-The diagram below shows how state flows between the global context and local components:
-
-```
-┌────────────────────────────────────────────────────────┐
-│                      AuthContext                       │
-├────────────────────────────────────────────────────────┤
-│  State: { user: { id: 1, name: "John" }, loading }    │
-│  Functions: login(), register(), logout()              │
-└───────────┬────────────────────────────────┬───────────┘
-            │                                │
-            │ Read user                      │ Read user / Trigger logout
-            ▼                                ▼
-┌───────────────────────┐        ┌───────────────────────┐
-│     ProtectedRoute    │        │         Layout        │
-├───────────────────────┤        ├───────────────────────┤
-│ Checks authorization  │        │ Renders sidebar,      │
-│ Redirects on null     │        │ header, & user avatar │
-└───────────────────────┘        └───────────────────────┘
-                                             │
-                                             │ Renders children
-                                             ▼
-                                 ┌───────────────────────┐
-                                 │     DashboardPage     │
-                                 ├───────────────────────┤
-                                 │ State: { todos, page }│
-                                 │ Sync: fetchTodos()    │
-                                 └───────────────────────┘
-```
+| **Local Dashboard State** | `DashboardPage` | `myGroups` (array), `sharedGroups` (array), `search` (string), `statusFilter` (string), `sortBy` (string), `counts` (object) | `DashboardPage` |
+| **Local Group Details State** | `GroupDetailsPage` | `group` (object), `collaborators` (array), `searchQuery` (string), `searchResults` (array), `filter` (string), `newSubtask` (object), `editSubtaskData` (object), `toast` (object) | `GroupDetailsPage` |
+| **Local Form State** | `TodoFormPage` | `formData` (title, description, due_date), `errors` (object), `fetching` (boolean) | `TodoFormPage` |
 
 ---
 
 ## 10. End-to-End User Journey
 
-This section traces a user's journey through the application, from opening the login page to logging out:
-
-1. **Open Application**:
-   * User navigates to `/`.
-   * Router loads [App.jsx](file:///d:/Todo%20KreditBee/frontend/src/App.jsx) and mounts components.
-   * `ProtectedRoute` detects that no user or token exists in local storage and redirects the user to `/login`.
-2. **Access Login View**:
-   * [LoginPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Login/LoginPage.jsx) loads.
-   * User enters credentials ("john@example.com", "password123").
-   * User clicks "Login".
-3. **Form Submission & Authentication**:
-   * Frontend validates input formats.
-   * Login request is sent: `POST /api/auth/login`.
-   * Backend database verifies the email exists and checks the password hash using bcrypt.
-   * JWT is generated and returned to the frontend on success: `{ token: "eyJhb...", user: { id: 1, name: "John" } }`.
-4. **Dashboard Render**:
-   * Token is saved in local storage and the global `user` context is updated.
-   * User is redirected to `/`.
-   * `ProtectedRoute` verifies the authenticated session and allows navigation to the dashboard.
-   * Dashboard triggers `fetchTodos()` which calls `GET /api/todos?page=1&limit=6`.
-   * Dashboard renders the user's tasks.
-5. **Create Task**:
-   * User clicks "New Task" button.
-   * Navigation redirects user to `/create`.
-   * User types title ("Send Invoice") and clicks "Create Task".
-   * Request sent: `POST /api/todos` (containing JWT header authorization token).
-   * Backend inserts task into database and returns a success response.
-   * User is redirected back to the dashboard, which refreshes the task list.
-6. **Task Actions (Toggle & Delete)**:
-   * User checks the checkbox on a task card. The UI immediately marks the task as completed.
-   * Request sent: `PATCH /api/todos/:id/complete`. The database updates the task's completion status.
-   * User clicks the delete icon on a task and confirms the prompt.
-   * Task is immediately removed from the UI, and a delete request is sent: `DELETE /api/todos/:id`.
-7. **View User Profile**:
-   * User clicks "Profile" in sidebar.
-   * Navigation redirects user to `/profile`.
-   * [ProfilePage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Profile/ProfilePage.jsx) displays the user's name, email, and ID.
-8. **User Logout**:
-   * User clicks "Logout" button.
-   * Storage keys are cleared and the global `user` context is updated to `null`.
-   * `<ProtectedRoute>` detects the session loss and redirects the user back to `/login`.
+1. **Access Dashboard**:
+   - User signs in. `ProtectedRoute` confirms token in storage and loads dashboard.
+   - Dashboard initiates endpoints: `GET /api/groups` and `GET /api/shared-groups`. Renders owned groups in "My Groups" and collaborative ones in "Shared With Me".
+2. **Create Project Group**:
+   - User clicks "New Group" (redirects to `/create`). Fills form: "Vite App Setup", description, due date. Submits.
+   - Request goes to `POST /api/groups`. Database inserts record. Redirects to `/`.
+3. **Workspace Checklists Management**:
+   - Click "Vite App Setup" to open project details workspace.
+   - Add new subtasks: "Install React GORM" (set deadline), "Establish Router Routes", "Configure Axios Interceptors".
+   - Progress bar updates. Overall status becomes "🟢 On Track".
+4. **Project Collaboration**:
+   - Owner clicks "Share Group". Searches for "bob@example.com".
+   - Selects Bob, assigns role `EDIT`, and clicks "Add Collaborator".
+   - Bob logs in. Renders "Vite App Setup" in "Shared With Me" with role `Editor`. Bob adds a subtask "Run Linter Checks" and toggles subtask completion.
+5. **Approaching Alarms**:
+   - When a project deadline approaches within 2 days (or a subtask deadline becomes overdue), dashboard widgets and checklist headers render warning badges.
+6. **Task Actions & Logout**:
+   - User checks off all checklist subtasks. Progress hits 100% and project status shifts to "🔵 Completed".
+   - User logs out. App cleans local storage credentials and routes back to `/login`.
 
 ---
 
 ## 11. Sequence Diagrams
 
-### Register
+### Create Group
 ```mermaid
 sequenceDiagram
     autonumber
@@ -635,61 +473,17 @@ sequenceDiagram
     participant BE as Go Backend (Gin)
     participant DB as MySQL DB
 
-    User->>FE: Inputs Name, Email, Password, Mismatched Password
-    FE->{}-FE: Validation fails: mismatch password
-    FE-->>User: Display Form Error
-    User->>FE: Corrects password & clicks Register
-    FE->>BE: POST /api/auth/register {name, email, password}
-    BE->>DB: Query User where email = Input email
-    DB-->>BE: Row Not Found
-    BE->{}-BE: Bcrypt hash password
-    BE->>DB: INSERT INTO users VALUES (...)
-    DB-->>BE: Success
-    BE-->>FE: 201 Created (User Data JSON)
-    FE-->>User: Toast success & Redirects to Login
-```
-
-### Login
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Client User
-    participant FE as React Frontend
-    participant BE as Go Backend (Gin)
-    participant DB as MySQL DB
-
-    User->>FE: Inputs Email & Password
-    FE->>BE: POST /api/auth/login {email, password}
-    BE->>DB: Query User where email = Input email
-    DB-->>BE: Row found with hashed password
-    BE->{}-BE: Compare password hashes
-    BE->{}-BE: Sign JWT token
-    BE-->>FE: 200 OK {token, user}
-    FE->{}-FE: Save token & user to LocalStorage
-    FE-->>User: Redirect to Dashboard (/)
-```
-
-### Create Todo
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Client User
-    participant FE as React Frontend
-    participant BE as Go Backend (Gin)
-    participant DB as MySQL DB
-
-    User->>FE: Clicks "New Task"
-    FE-->>User: Load Todo Form Page
-    User->>FE: Fills Title, Description & Clicks Create
-    FE->>BE: POST /api/todos {title, description} with Bearer token
+    User->>FE: Fills Title, Description, Due Date & clicks Create Group
+    FE->>BE: POST /api/groups {title, description, due_date} with Bearer token
     Note over BE: AuthMiddleware validates JWT
-    BE->>DB: INSERT INTO todos (title, description, completed, user_id, ...) VALUES (...)
+    BE->{}-BE: Verify title is not empty & deadline is not past
+    BE->>DB: INSERT INTO todos (title, description, due_date, user_id, ...) VALUES (...)
     DB-->>BE: Success
-    BE-->>FE: 201 Created (Todo Object)
+    BE-->>FE: 201 Created (Group Object)
     FE-->>User: Toast success & Redirects to Dashboard (/)
 ```
 
-### Update Todo
+### Create Checklist Subtask
 ```mermaid
 sequenceDiagram
     autonumber
@@ -698,98 +492,75 @@ sequenceDiagram
     participant BE as Go Backend (Gin)
     participant DB as MySQL DB
 
-    User->>FE: Clicks "Edit" icon on task card
-    FE->>BE: GET /api/todos/:id (Bearer token)
-    Note over BE: Validate JWT & check task ownership
-    BE->>DB: SELECT * FROM todos WHERE id = :id LIMIT 1
-    DB-->>BE: Todo Record
-    BE-->>FE: 200 OK (Todo Object)
-    FE-->>User: Renders form pre-filled with task data
-    User->>FE: Modifies Title and Clicks Save
-    FE->>BE: PUT /api/todos/:id {title, description}
-    Note over BE: Validate JWT & verify task ownership
-    BE->>DB: UPDATE todos SET title = ..., updated_at = ... WHERE id = :id
+    User->>FE: Fills Subtask Title, Description, Due Date & Clicks Add Task
+    FE->>BE: POST /api/groups/:id/tasks {title, description, due_date} with Bearer token
+    Note over BE: AuthMiddleware validates JWT
+    BE->{}-BE: Check user permission (OWNER or EDIT)
+    BE->{}-BE: Verify subtask due date does not exceed parent group due date
+    BE->>DB: INSERT INTO todos (title, description, due_date, parent_todo_id, user_id, ...) VALUES (...)
     DB-->>BE: Success
-    BE-->>FE: 200 OK (Updated Todo Object)
-    FE-->>User: Toast success & Redirects to Dashboard (/)
+    BE->>DB: Recalculate parent group health/progress metrics and save
+    DB-->>BE: Success
+    BE-->>FE: 201 Created (Subtask Object)
+    FE-->>User: Append checklist subtask and update progress UI
 ```
 
-### Delete Todo
+### Share Group (Invite Collaborator)
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as Client User
+    actor User as Owner User
     participant FE as React Frontend
     participant BE as Go Backend (Gin)
     participant DB as MySQL DB
 
-    User->>FE: Clicks "Delete" icon on task card
-    FE->{}-FE: Confirm prompt warning
-    FE->{}-FE: Optimistic UI Update: Remove task from local list
-    FE->>BE: DELETE /api/todos/:id (Bearer token)
-    Note over BE: Validate JWT & verify task ownership
-    BE->>DB: DELETE FROM todos WHERE id = :id
+    User->>FE: Type search query, select user, assign role (VIEW/EDIT), click Add
+    FE->>BE: POST /api/groups/:id/share {email, permission} with Bearer token
+    Note over BE: AuthMiddleware validates JWT
+    BE->{}-BE: Verify user is OWNER of group
+    BE->>DB: Select target user by email
+    DB-->>BE: Found Target User ID
+    BE->>DB: Insert GroupShare mapping
     DB-->>BE: Success
-    BE-->>FE: 200 OK (Deletion Confirmed)
-    FE-->>User: Toast Success message
-```
-
-### Logout
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Client User
-    participant FE as React Frontend
-    participant Storage as LocalStorage
-
-    User->>FE: Clicks "Logout"
-    FE->>Storage: Remove "token"
-    FE->>Storage: Remove "user"
-    FE->{}-FE: Set AuthContext user to null
-    FE-->>User: Redirect to /login page
+    BE-->>FE: 201 Created (GroupShare Object)
+    FE-->>User: Display collaborator in current members list
 ```
 
 ---
 
 ## 12. Error Handling Workflow
 
-The application handles errors across all layers, from input validation to server errors:
-
-### Validation Errors
-* **Client-Side Validation**: Handled within components before sending API requests. Mismatches or empty inputs trigger updates to the local component `errors` state, displaying helpful validation error messages next to the affected inputs.
-* **Server-Side Validation**: Gin controller methods use `c.ShouldBindJSON` to validate input models (e.g. `RegisterInput`). When validation fails (e.g. password is too short), the controller returns a `400 Bad Request` response with validation error details.
-
-### Authentication Errors
-* **Invalid Login Credentials**: If a login attempt fails due to an incorrect email or password, the backend returns a `401 Unauthorized` response with an "invalid email or password" error message. The frontend catches the error and displays the message to the user in a Toast notification.
-* **Expired or Missing JWT**: Handled by the backend's [AuthMiddleware](file:///d:/Todo KreditBee/backend/middleware/auth_middleware.go). If a request lacks a valid token, the middleware aborts the request pipeline and returns a `401 Unauthorized` response.
-* **Axios Auto-Logout**: The client's Axios response interceptor catches all `401` errors globally, clears local storage to remove the invalid credentials, and redirects the user to the login page.
-
-### Database Errors
-* **Duplicate Email Registration**: If a user attempts to register with an email address that already exists, the database throws a unique constraint exception. The backend's [AuthService](file:///d:/Todo%20KreditBee/backend/services/auth_service.go) catches this error, masks the raw SQL database error, and returns a user-friendly "email is already registered" message.
-* **Database Connection Failures**: If the database server is unreachable, repository methods return a connection error. The service layer handles this error safely and returns a "database connectivity error" message to avoid exposing raw connection details to the client.
-
-### API & Network Failures
-* **Network Failures**: If the API server is unreachable, Axios throws a network error. The response interceptor catches the error, sets a default "Something went wrong. Please try again." error message, and rejects the promise. The frontend page catches the rejection and displays the error message in a Toast notification.
-* **Global Server Panic Recovery**: The backend's [ErrorRecoveryMiddleware](file:///d:/Todo%20KreditBee/backend/middleware/error_middleware.go) uses defer-recover blocks to catch any unexpected runtime panics, logs the panic details to stdout for debugging, and returns a standard `500 Internal Server Error` response to the client.
+* **Validation Failures**:
+  - Empty parent titles or empty subtask titles reject client-side.
+  - Subtask deadlines exceeding overall group project deadlines return `400 Bad Request` with structured validations error messages.
+* **Permission Constraints**:
+  - Unauthenticated access returns `401 Unauthorized`.
+  - Collaborators trying to manage sharing, edit group metadata, delete a group, or delete a subtask trigger a `403 Forbidden` error with description "only group owners can delete...".
+  - Viewers (`VIEW` role) trying to toggle subtasks or edit subtasks trigger database-safe `403 Forbidden` abort responses.
+* **Database & Integrity Constraints**:
+  - GORM deletes cascade. Deleting a group cascades to all subtask records and share rows, avoiding orphaned rows.
+  - Hashing comparison and duplicate registrations are securely isolated in repositories and services, hiding MySQL error codes.
+* **Global recovery**:
+  - Backend's recovery middleware intercepts unhandled panics, logs call stacks, and prevents API servers from crashing, serving a standard `500` error to components.
 
 ---
 
-## 13. Execution Flow Summary
+## 13. Execution Flow Summary (Subtask Status Toggle)
 
-Below is a summary of the end-to-end execution flow, tracing a user action from the frontend UI all the way through the backend database and back:
+Below is a summary of the execution flow, tracing a subtask completion check:
 
 | Flow Stage | Layer | Component / File | Execution Action |
 | :--- | :--- | :--- | :--- |
-| **1. User Action** | Frontend UI | [DashboardPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Dashboard/DashboardPage.jsx) | User clicks the checkbox on a task card to toggle completion. |
-| **2. Optimistic Update** | Frontend View | [DashboardPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Dashboard/DashboardPage.jsx) | Local task state is immediately updated, toggling the task's checkbox UI. |
-| **3. API Call** | Axios Client | [api.js](file:///d:/Todo%20KreditBee/frontend/src/services/api.js) | Sends a `PATCH` request to `/api/todos/:id/complete`. |
-| **4. Headers Injection** | Request Interceptor | [api.js](file:///d:/Todo%20KreditBee/frontend/src/services/api.js) | Automatically injects `Authorization: Bearer <token>` header into the request. |
-| **5. Entry Gate** | Backend Router | [routes.go](file:///d:/Todo%20KreditBee/backend/routes/routes.go) | Matches path `/api/todos/:id/complete` and routes request to handlers. |
-| **6. Request Logger** | Global Middleware | [logger_middleware.go](file:///d:/Todo%20KreditBee/backend/middleware/logger_middleware.go) | Records path and HTTP method in server stdout log. |
-| **7. Session Check** | Route Middleware | [auth_middleware.go](file:///d:/Todo%20KreditBee/backend/middleware/auth_middleware.go) | Validates JWT token, extracts User ID, and injects it into Gin context. |
-| **8. Controller Action** | Backend Controller | [todo_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/todo_controller.go) | Parses parameters and calls `todoService.ToggleCompleteTodo`. |
-| **9. Validation Check** | Business Service | [todo_service.go](file:///d:/Todo%20KreditBee/backend/services/todo_service.go) | Fetches the task and verifies task ownership (`todo.UserID == userID`). |
-| **10. SQL Execution** | GORM Repository | [todo_repository.go](file:///d:/Todo%20KreditBee/backend/repositories/todo_repository.go) | Calls GORM save: updates the task's completion status. |
-| **11. Database Query** | Database Engine | [mysql.go](file:///d:/Todo%20KreditBee/backend/database/mysql.go) | Runs: `UPDATE todos SET completed = NOT completed WHERE id = ?`. |
-| **12. Response Delivery** | HTTP Response | [todo_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/todo_controller.go) | Returns `200 OK` response with updated todo data. |
-| **13. UI Sync & Success** | Frontend View | [DashboardPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Dashboard/DashboardPage.jsx) | displays a success Toast notification to confirm the update. |
+| **1. Checklist Interaction** | Frontend UI | [GroupDetailsPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Groups/GroupDetailsPage.jsx) | User clicks the checkbox next to a subtask item. |
+| **2. Local State Sync** | Frontend State | [GroupDetailsPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Groups/GroupDetailsPage.jsx) | Subtask checklist state is immediately updated, recalculating overall progress and health status for immediate UI response. |
+| **3. API Call** | Axios Client | [api.js](file:///d:/Todo%20KreditBee/frontend/src/services/api.js) | Sends a `PATCH` request to `/api/tasks/:id/complete`. |
+| **4. Headers Injection** | Request Interceptor | [api.js](file:///d:/Todo%20KreditBee/frontend/src/services/api.js) | Automatically injects `Authorization: Bearer <token>` header. |
+| **5. Entry Gate** | Backend Router | [routes.go](file:///d:/Todo%20KreditBee/backend/routes/routes.go) | Matches path `/api/tasks/:id/complete` and routes request. |
+| **6. Session Check** | Route Middleware | [auth_middleware.go](file:///d:/Todo%20KreditBee/backend/middleware/auth_middleware.go) | Validates JWT token, extracts User ID, and injects it into Gin context. |
+| **7. Controller Action** | Backend Controller | [subtask_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/subtask_controller.go) | Parses parameters and calls `todoService.ToggleCompleteSubtask`. |
+| **8. Permission Check**| Business Service | [todo_service.go](file:///d:/Todo%20KreditBee/backend/services/todo_service.go) | Resolves permission relative to subtask (`GetPermission`). Confirms role is `OWNER` or `EDIT`. |
+| **9. Toggle DB Save** | GORM Repository | [todo_repository.go](file:///d:/Todo%20KreditBee/backend/repositories/todo_repository.go) | Toggles the completion boolean state of the subtask GORM model and saves. |
+| **10. Parent Progress Sync**| Business Service | [todo_service.go](file:///d:/Todo%20KreditBee/backend/services/todo_service.go) | Service fetches the parent group, counts total vs completed subtasks, updates progress, health status, and persists changes. |
+| **11. DB Sync** | Database Engine | [mysql.go](file:///d:/Todo%20KreditBee/backend/database/mysql.go) | Runs: `UPDATE todos SET completed = ..., updated_at = ... WHERE id = ?` for both subtask and parent group. |
+| **12. Response Delivery**| HTTP Response | [subtask_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/subtask_controller.go) | Returns `200 OK` response with updated subtask details. |
+| **13. UI Sync Check** | Frontend View | [GroupDetailsPage.jsx](file:///d:/Todo%20KreditBee/frontend/src/pages/Groups/GroupDetailsPage.jsx) | Confirms update success with Toast. (If server returned an error, state is automatically rolled back to database status). |

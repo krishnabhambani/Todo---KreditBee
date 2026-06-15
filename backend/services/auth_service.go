@@ -11,16 +11,18 @@ import (
 	"github.com/todo-app/backend/utils"
 	"gorm.io/gorm"
 )
-
+//Blueprint
 type AuthService interface {
 	Register(ctx context.Context, name, email, password string) (*models.User, error)
 	Login(ctx context.Context, email, password string) (string, *models.User, error)
 }
 
+//implementation
 type authService struct {
 	userRepo repositories.UserRepository
 }
 
+// Used for testing
 func NewAuthService(repo repositories.UserRepository) AuthService {
 	return &authService{userRepo: repo}
 }
@@ -87,6 +89,8 @@ func (s *authService) Register(ctx context.Context, name, email, password string
 		return nil, errors.New("failed to create user account due to a database issue")
 	}
 
+	// Clear password hash before returning so it never leaks via logging or non-JSON serialization
+	user.Password = ""
 	return user, nil
 }
 
@@ -113,5 +117,7 @@ func (s *authService) Login(ctx context.Context, email, password string) (string
 		return "", nil, errors.New("failed to generate access session")
 	}
 
+	// Clear password hash before returning so it never leaks via logging or non-JSON serialization
+	user.Password = ""
 	return token, user, nil
 }

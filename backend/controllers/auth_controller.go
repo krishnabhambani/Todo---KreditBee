@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"log"
 	"net/http"
 	"regexp"
 
@@ -38,6 +39,8 @@ func (ctrl *AuthController) Register(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[AUTH] Register attempt: name=%q email=%q", input.Name, input.Email)
+
 	user, err := ctrl.authService.Register(c.Request.Context(), input.Name, input.Email, input.Password)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -66,12 +69,14 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[AUTH] Login attempt: email=%q", input.Email)
+
 	// Double check email validation
 	emailRegex := regexp.MustCompile(`(?i)^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$`)
 	if !emailRegex.MatchString(input.Email) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"message": "Invalid email format",
+			"message": "Invalid email",
 			"data":    nil,
 		})
 		return

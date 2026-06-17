@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/todo-app/backend/config"
 )
 
 type JWTClaims struct {
@@ -13,27 +12,29 @@ type JWTClaims struct {
 	jwt.RegisteredClaims
 }
 
-func GenerateJWT(userID uint) (string, error) {
+// GenerateJWT creates a signed HS256 JWT for the given userID.
+// The secret is passed explicitly — this package has no dependency on config.
+func GenerateJWT(userID uint, secret string) (string, error) {
 	claims := &JWTClaims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // 1 day validity
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	secret := []byte(config.AppConfig.JWTSecret)
-	
-	return token.SignedString(secret)
+	return token.SignedString([]byte(secret))
 }
 
-func ValidateJWT(tokenString string) (*JWTClaims, error) {
+// ValidateJWT parses and validates a JWT string.
+// The secret is passed explicitly — this package has no dependency on config.
+func ValidateJWT(tokenString, secret string) (*JWTClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}
-		return []byte(config.AppConfig.JWTSecret), nil
+		return []byte(secret), nil
 	})
 
 	if err != nil {

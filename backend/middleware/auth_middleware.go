@@ -8,7 +8,9 @@ import (
 	"github.com/todo-app/backend/utils"
 )
 
-func AuthMiddleware() gin.HandlerFunc {
+// AuthMiddleware validates Bearer JWT tokens on protected routes.
+// The jwtSecret is injected at construction time — no global config access.
+func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -32,7 +34,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		claims, err := utils.ValidateJWT(parts[1])
+		claims, err := utils.ValidateJWT(parts[1], jwtSecret)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
@@ -43,7 +45,6 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Save user ID to context
 		c.Set("userID", claims.UserID)
 		c.Next()
 	}

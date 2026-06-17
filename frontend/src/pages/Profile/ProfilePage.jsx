@@ -32,13 +32,13 @@ const ProfilePage = () => {
             </div>
           </div>
 
-          <div className={styles.infoRow}>
+          {/* <div className={styles.infoRow}>
             <Calendar className={styles.icon} size={20} />
             <div className={styles.infoContent}>
               <span className={styles.label}>Account ID</span>
               <span className={styles.value}>User #{user?.id || 'N/A'}</span>
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>

@@ -2,21 +2,36 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/todo-app/backend/config"
 	"github.com/todo-app/backend/controllers"
 	"github.com/todo-app/backend/database"
+	"github.com/todo-app/backend/logger"
 	"github.com/todo-app/backend/middleware"
 	"github.com/todo-app/backend/repositories"
 	"github.com/todo-app/backend/services"
 )
 
-func SetupRouter() *gin.Engine {
+// SetupRouter wires all dependencies and registers all routes.
+// cfg and log are the two root dependencies injected from main.
+func SetupRouter(cfg config.Config, log logger.Logger) *gin.Engine {
 	router := gin.New()
 
-	// Global Middlewares
-	router.Use(middleware.LoggerMiddleware())
-	router.Use(middleware.ErrorRecoveryMiddleware())
+	// 404 Middleware
+	router.NoRoute(func(c *gin.Context) {
+		c.JSON(404, gin.H{"success": false, "message": "Route not found", "data": nil})
+	})
 
-	// CORS Middleware (Default)
+	// 405 Middleware
+	router.HandleMethodNotAllowed = true
+	router.NoMethod(func(c *gin.Context) {
+		c.JSON(405, gin.H{"success": false, "message": "Method not allowed", "data": nil})
+	})
+
+	// Global Middlewares — inject logger and jwt secret
+	router.Use(middleware.LoggerMiddleware(log))
+	router.Use(middleware.ErrorHandler(log))
+
+	// CORS Middleware
 	router.Use(func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
 		if origin != "" {
@@ -35,18 +50,23 @@ func SetupRouter() *gin.Engine {
 		c.Next()
 	})
 
-	// Dependency Injection
-	userRepo := repositories.NewUserRepository(database.DB)
-	todoRepo := repositories.NewTodoRepository(database.DB)
-	groupShareRepo := repositories.NewGroupShareRepository(database.DB)
+	// Dependency Injection — build one Queries instance, share across all repos.
+	queries := database.New(database.DB)
 
-	authService := services.NewAuthService(userRepo)
+	userRepo := repositories.NewUserRepository(queries)
+	todoRepo := repositories.NewTodoRepository(queries)
+	groupShareRepo := repositories.NewGroupShareRepository(queries)
+
+	authService := services.NewAuthService(userRepo, cfg.GetJWTSecret())
 	todoService := services.NewTodoService(todoRepo, groupShareRepo, userRepo)
 
-	authController := controllers.NewAuthController(authService)
+	authController := controllers.NewAuthController(authService, log)
 	groupController := controllers.NewGroupController(todoService)
 	subtaskController := controllers.NewSubtaskController(todoService)
 	shareController := controllers.NewShareController(todoService)
+
+	// Auth middleware is constructed with the JWT secret from config
+	authMW := middleware.AuthMiddleware(cfg.GetJWTSecret())
 
 	// API Group
 	api := router.Group("/api")
@@ -58,9 +78,16 @@ func SetupRouter() *gin.Engine {
 			auth.POST("/login", authController.Login)
 		}
 
+		// Auth Routes (Protected)
+		authProtected := api.Group("/auth")
+		authProtected.Use(authMW)
+		{
+			authProtected.PATCH("/password", authController.UpdatePassword)
+		}
+
 		// Group Routes (Protected)
 		groups := api.Group("/groups")
-		groups.Use(middleware.AuthMiddleware())
+		groups.Use(authMW)
 		{
 			groups.GET("", groupController.GetGroups)
 			groups.GET("/:id", groupController.GetGroupByID)
@@ -75,12 +102,13 @@ func SetupRouter() *gin.Engine {
 			// Group sharing
 			groups.POST("/:id/share", shareController.ShareGroup)
 			groups.DELETE("/:id/share/:userId", shareController.RemoveShare)
+			groups.PATCH("/:id/share/:userId/role", shareController.UpdateSharePermission)
 			groups.GET("/:id/members", shareController.GetGroupMembers)
 		}
 
 		// Individual Subtask actions (Protected)
 		tasks := api.Group("/tasks")
-		tasks.Use(middleware.AuthMiddleware())
+		tasks.Use(authMW)
 		{
 			tasks.PUT("/:id", subtaskController.UpdateSubtask)
 			tasks.DELETE("/:id", subtaskController.DeleteSubtask)
@@ -89,14 +117,14 @@ func SetupRouter() *gin.Engine {
 
 		// Shared Groups (Protected)
 		shared := api.Group("/shared-groups")
-		shared.Use(middleware.AuthMiddleware())
+		shared.Use(authMW)
 		{
 			shared.GET("", shareController.GetSharedGroups)
 		}
 
 		// Users Search (Protected)
 		users := api.Group("/users")
-		users.Use(middleware.AuthMiddleware())
+		users.Use(authMW)
 		{
 			users.GET("", shareController.SearchUsers)
 		}

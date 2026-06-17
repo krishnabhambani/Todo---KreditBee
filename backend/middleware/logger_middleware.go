@@ -1,13 +1,15 @@
 package middleware
 
 import (
-	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/todo-app/backend/logger"
 )
 
-func LoggerMiddleware() gin.HandlerFunc {
+// LoggerMiddleware logs every HTTP request as a structured log entry.
+// The logger is injected — no global state.
+func LoggerMiddleware(log logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
@@ -15,22 +17,16 @@ func LoggerMiddleware() gin.HandlerFunc {
 
 		c.Next()
 
-		timeStamp := time.Now()
-		latency := timeStamp.Sub(start)
-		clientIP := c.ClientIP()
-		method := c.Request.Method
-		statusCode := c.Writer.Status()
-
 		if raw != "" {
 			path = path + "?" + raw
 		}
 
-		log.Printf("[API LOG] %3d | %13v | %15s | %-7s %#v",
-			statusCode,
-			latency,
-			clientIP,
-			method,
-			path,
+		log.Info("http request",
+			logger.F("status", c.Writer.Status()),
+			logger.F("latency", time.Since(start)),
+			logger.F("ip", c.ClientIP()),
+			logger.F("method", c.Request.Method),
+			logger.F("path", path),
 		)
 	}
 }

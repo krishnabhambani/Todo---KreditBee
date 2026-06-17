@@ -44,6 +44,12 @@ const GroupDetailsPage = () => {
   const [sharingEmail, setSharingEmail] = useState('');
   const [sharePermission, setSharePermission] = useState('VIEW'); // VIEW or EDIT
 
+  // Edit group states (Issue 3)
+  const [isEditingGroup, setIsEditingGroup] = useState(false);
+  const [editGroupData, setEditGroupData] = useState({ title: '', description: '', due_date: '' });
+  const [editGroupLoading, setEditGroupLoading] = useState(false);
+  const [updatingRoleId, setUpdatingRoleId] = useState(null);
+
   useEffect(() => {
     fetchGroupDetails();
   }, [id]);
@@ -129,6 +135,78 @@ const GroupDetailsPage = () => {
       }
     } catch (err) {
       setToast({ type: 'error', message: err.message });
+    }
+  };
+
+  // Issue 3: Edit Group handlers
+  const handleStartEditGroup = () => {
+    setEditGroupData({
+      title: group.title,
+      description: group.description || '',
+      due_date: formatDateForInput(group.due_date)
+    });
+    setIsEditingGroup(true);
+  };
+
+  const handleCancelEditGroup = () => {
+    setIsEditingGroup(false);
+  };
+
+  const handleSaveEditGroup = async (e) => {
+    e.preventDefault();
+    if (!editGroupData.title.trim()) {
+      setToast({ type: 'error', message: 'Group title is required' });
+      return;
+    }
+
+    setEditGroupLoading(true);
+    try {
+      const payload = {
+        title: editGroupData.title.trim(),
+        description: editGroupData.description.trim(),
+        due_date: editGroupData.due_date
+          ? (() => {
+              const [y, m, d] = editGroupData.due_date.split('-').map(Number);
+              return new Date(y, m - 1, d, 23, 59, 59).toISOString();
+            })()
+          : null,
+      };
+
+      const response = await API.put(`/groups/${id}`, payload);
+      if (response.success && response.data) {
+        setGroup(response.data);
+        setIsEditingGroup(false);
+        setToast({ type: 'success', message: 'Group updated successfully!' });
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message });
+    } finally {
+      setEditGroupLoading(false);
+    }
+  };
+
+  // Issue 4: Update collaborator role handler
+  const handleUpdateRole = async (targetUserId, newPermission) => {
+    setUpdatingRoleId(targetUserId);
+    // Optimistic update
+    const prevCollaborators = [...collaborators];
+    setCollaborators(collaborators.map(m =>
+      m.shared_with_user_id === targetUserId ? { ...m, permission: newPermission } : m
+    ));
+
+    try {
+      const response = await API.patch(`/groups/${id}/share/${targetUserId}/role`, {
+        permission: newPermission
+      });
+      if (response.success) {
+        setToast({ type: 'success', message: `Role updated to ${newPermission === 'EDIT' ? 'Editor' : 'Viewer'}` });
+      }
+    } catch (err) {
+      // Revert on failure
+      setCollaborators(prevCollaborators);
+      setToast({ type: 'error', message: err.message });
+    } finally {
+      setUpdatingRoleId(null);
     }
   };
 
@@ -248,7 +326,13 @@ const GroupDetailsPage = () => {
       const payload = {
         title: newSubtask.title.trim(),
         description: newSubtask.description.trim(),
-        due_date: newSubtask.due_date ? new Date(newSubtask.due_date).toISOString() : null
+        due_date: newSubtask.due_date
+          ? (() => {
+              // Build date in local timezone to avoid UTC midnight shifting to previous day
+              const [y, m, d] = newSubtask.due_date.split('-').map(Number);
+              return new Date(y, m - 1, d, 23, 59, 59).toISOString();
+            })()
+          : null
       };
 
       const response = await API.post(`/groups/${id}/tasks`, payload);
@@ -286,7 +370,13 @@ const GroupDetailsPage = () => {
       const payload = {
         title: editSubtaskData.title.trim(),
         description: editSubtaskData.description.trim(),
-        due_date: editSubtaskData.due_date ? new Date(editSubtaskData.due_date).toISOString() : null
+        due_date: editSubtaskData.due_date
+          ? (() => {
+              // Build date in local timezone to avoid UTC midnight shifting to previous day
+              const [y, m, d] = editSubtaskData.due_date.split('-').map(Number);
+              return new Date(y, m - 1, d, 23, 59, 59).toISOString();
+            })()
+          : null
       };
 
       const response = await API.put(`/tasks/${subtaskId}`, payload);
@@ -393,85 +483,153 @@ const GroupDetailsPage = () => {
           <ArrowLeft size={18} />
           <span>Back to Dashboard</span>
         </button>
-        {canManageSharing && (
-          <button onClick={handleOpenShareModal} className={styles.shareBtn}>
-            <Users size={16} />
-            <span>Share Group</span>
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {canManageSharing && !isEditingGroup && (
+            <button onClick={handleStartEditGroup} className={styles.editBtn} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: 600 }}>
+              <Edit size={16} />
+              <span>Edit Group</span>
+            </button>
+          )}
+          {canManageSharing && (
+            <button onClick={handleOpenShareModal} className={styles.shareBtn}>
+              <Users size={16} />
+              <span>Share Group</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Group Info Header Card */}
       <div className={styles.headerCard}>
-        <div className={styles.groupInfo}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
-            <h1 className={styles.groupTitle} style={{ margin: 0 }}>{group.title}</h1>
-            <span className={`${styles.healthBadge} ${getHealthBadgeStyle(group.health_status)}`}>
-              {getHealthLabel(group.health_status)}
-            </span>
-          </div>
-          {group.description && <p className={styles.groupDesc}>{group.description}</p>}
-        </div>
-
-        {/* Warnings Banner in details */}
-        {(daysLeft >= 0 && daysLeft <= 2 && group.health_status !== 'COMPLETED') || overdueSubtasks > 0 ? (
-          <div className={styles.warningsList} style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-            {daysLeft >= 0 && daysLeft <= 2 && group.health_status !== 'COMPLETED' && (
-              <div className={`${styles.warningTag} ${styles.warningAlert}`}>
-                <AlertTriangle size={14} />
-                <span>⚠ Project Deadline Approaching: {daysLeft} {daysLeft === 1 ? 'day' : 'days'} remaining!</span>
-              </div>
-            )}
-            {overdueSubtasks > 0 && (
-              <div className={`${styles.warningTag} ${styles.warningAlert}`}>
-                <AlertTriangle size={14} />
-                <span>⚠ Checklist Alert: {overdueSubtasks} overdue subtask {overdueSubtasks === 1 ? 'item' : 'items'} detected!</span>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        <div className={styles.metaInfo}>
-          {group.due_date ? (
-            <div className={`${styles.metaItem} ${groupDeadlineOverdue ? styles.overdue : ''}`}>
-              <Clock size={16} />
-              <span>Deadline: {formatDate(group.due_date)} {groupDeadlineOverdue && '(Overdue)'} ({getDaysRemainingText(group)})</span>
+        {isEditingGroup ? (
+          /* Inline Edit Group Form (Issue 3) */
+          <form onSubmit={handleSaveEditGroup} className={styles.inlineForm} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className={styles.inputGroup || ''} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>Group Title *</label>
+              <input
+                type="text"
+                value={editGroupData.title}
+                onChange={(e) => setEditGroupData({ ...editGroupData, title: e.target.value })}
+                placeholder="Group title"
+                required
+                autoFocus
+                style={{ padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.95rem', fontWeight: 600 }}
+              />
             </div>
-          ) : (
-            <div className={styles.metaItem}>
-              <Calendar size={16} />
-              <span>No group deadline set</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>Description</label>
+              <textarea
+                value={editGroupData.description}
+                onChange={(e) => setEditGroupData({ ...editGroupData, description: e.target.value })}
+                placeholder="Description (optional)"
+                rows={3}
+                style={{ padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.875rem', resize: 'vertical' }}
+              />
             </div>
-          )}
-          
-          <div className={styles.metaItem}>
-            <span>Subtasks: {group.completed_subtasks} / {group.total_subtasks}</span>
-          </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>Due Date</label>
+              <input
+                type="date"
+                value={editGroupData.due_date}
+                onChange={(e) => setEditGroupData({ ...editGroupData, due_date: e.target.value })}
+                style={{ padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.875rem' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <button
+                type="button"
+                onClick={handleCancelEditGroup}
+                disabled={editGroupLoading}
+                className={styles.cancelBtn}
+              >
+                Cancel
+              </button>
+              <button type="submit" disabled={editGroupLoading} className={styles.submitBtn}>
+                {editGroupLoading ? (
+                  <span className="spinner" style={{ width: '16px', height: '16px' }}></span>
+                ) : (
+                  <>
+                    <Save size={16} />
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        ) : (
+          /* Normal Group Info View */
+          <>
+            <div className={styles.groupInfo}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
+                <h1 className={styles.groupTitle} style={{ margin: 0 }}>{group.title}</h1>
+                <span className={`${styles.healthBadge} ${getHealthBadgeStyle(group.health_status)}`}>
+                  {getHealthLabel(group.health_status)}
+                </span>
+              </div>
+              {group.description && <p className={styles.groupDesc}>{group.description}</p>}
+            </div>
 
-          <div className={styles.metaItem}>
-            <span className={styles.permissionBadge} style={{
-              backgroundColor: userPermission === 'OWNER' ? 'var(--color-primary-light)' : userPermission === 'EDIT' ? 'var(--color-success-light)' : '#f1f5f9',
-              color: userPermission === 'OWNER' ? 'var(--color-primary)' : userPermission === 'EDIT' ? 'var(--color-success)' : 'var(--text-secondary)',
-              fontSize: '12px'
-            }}>
-              Role: {userPermission}
-            </span>
-          </div>
-        </div>
+            {/* Warnings Banner in details */}
+            {(daysLeft >= 0 && daysLeft <= 2 && group.health_status !== 'COMPLETED') || overdueSubtasks > 0 ? (
+              <div className={styles.warningsList} style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+                {daysLeft >= 0 && daysLeft <= 2 && group.health_status !== 'COMPLETED' && (
+                  <div className={`${styles.warningTag} ${styles.warningAlert}`}>
+                    <AlertTriangle size={14} />
+                    <span>⚠ Project Deadline Approaching: {daysLeft} {daysLeft === 1 ? 'day' : 'days'} remaining!</span>
+                  </div>
+                )}
+                {overdueSubtasks > 0 && (
+                  <div className={`${styles.warningTag} ${styles.warningAlert}`}>
+                    <AlertTriangle size={14} />
+                    <span>⚠ Checklist Alert: {overdueSubtasks} overdue subtask {overdueSubtasks === 1 ? 'item' : 'items'} detected!</span>
+                  </div>
+                )}
+              </div>
+            ) : null}
 
-        {/* Overall Group Progress Bar */}
-        <div className={styles.progressContainer}>
-          <div className={styles.progressText}>
-            <span>Overall Progress</span>
-            <span>{Math.round(group.progress)}%</span>
-          </div>
-          <div className={styles.progressBarTrack}>
-            <div 
-              className={`${styles.progressBarFill} ${group.completed ? styles.progressBarFillCompleted : ''}`} 
-              style={{ width: `${group.progress}%` }}
-            />
-          </div>
-        </div>
+            <div className={styles.metaInfo}>
+              {group.due_date ? (
+                <div className={`${styles.metaItem} ${groupDeadlineOverdue ? styles.overdue : ''}`}>
+                  <Clock size={16} />
+                  <span>Deadline: {formatDate(group.due_date)} {groupDeadlineOverdue && '(Overdue)'} ({getDaysRemainingText(group)})</span>
+                </div>
+              ) : (
+                <div className={styles.metaItem}>
+                  <Calendar size={16} />
+                  <span>No group deadline set</span>
+                </div>
+              )}
+              
+              <div className={styles.metaItem}>
+                <span>Subtasks: {group.completed_subtasks} / {group.total_subtasks}</span>
+              </div>
+
+              <div className={styles.metaItem}>
+                <span className={styles.permissionBadge} style={{
+                  backgroundColor: userPermission === 'OWNER' ? 'var(--color-primary-light)' : userPermission === 'EDIT' ? 'var(--color-success-light)' : '#f1f5f9',
+                  color: userPermission === 'OWNER' ? 'var(--color-primary)' : userPermission === 'EDIT' ? 'var(--color-success)' : 'var(--text-secondary)',
+                  fontSize: '12px'
+                }}>
+                  Role: {userPermission}
+                </span>
+              </div>
+            </div>
+
+            {/* Overall Group Progress Bar */}
+            <div className={styles.progressContainer}>
+              <div className={styles.progressText}>
+                <span>Overall Progress</span>
+                <span>{Math.round(group.progress)}%</span>
+              </div>
+              <div className={styles.progressBarTrack}>
+                <div 
+                  className={`${styles.progressBarFill} ${group.completed ? styles.progressBarFillCompleted : ''}`} 
+                  style={{ width: `${group.progress}%` }}
+                />
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Subtasks Section */}
@@ -751,9 +909,32 @@ const GroupDetailsPage = () => {
                       </div>
 
                       <div className={styles.collabActions}>
-                        <span className={`${styles.permissionBadge} ${member.permission === 'EDIT' ? styles.badgeEdit : styles.badgeView}`}>
-                          {member.permission === 'EDIT' ? 'Editor' : 'Viewer'}
-                        </span>
+                        {canManageSharing ? (
+                          <select
+                            value={member.permission}
+                            onChange={(e) => handleUpdateRole(member.shared_with_user_id, e.target.value)}
+                            disabled={updatingRoleId === member.shared_with_user_id}
+                            className={styles.selectInput}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: member.permission === 'EDIT' ? 'var(--color-success-light)' : '#f1f5f9',
+                              color: member.permission === 'EDIT' ? 'var(--color-success)' : 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              minWidth: '80px'
+                            }}
+                          >
+                            <option value="VIEW">Viewer</option>
+                            <option value="EDIT">Editor</option>
+                          </select>
+                        ) : (
+                          <span className={`${styles.permissionBadge} ${member.permission === 'EDIT' ? styles.badgeEdit : styles.badgeView}`}>
+                            {member.permission === 'EDIT' ? 'Editor' : 'Viewer'}
+                          </span>
+                        )}
                         
                         {canManageSharing && (
                           <button 

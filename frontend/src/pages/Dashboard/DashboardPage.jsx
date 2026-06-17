@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../../services/api';
 import Toast from '../../components/Toast/Toast';
@@ -35,6 +35,24 @@ const DashboardPage = () => {
   // Summary counts
   const [counts, setCounts] = useState({ overdue: 0, dueToday: 0, dueThisWeek: 0, upcoming: 0 });
 
+  // Refresh trigger: bump to force dashboard data re-fetch
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Refs for preventing duplicate requests (React StrictMode double-mount)
+  const dashboardAbortRef = useRef(null);
+  const countsAbortRef = useRef(null);
+
+  // Helper: compute summary counts from raw group data
+  const computeCounts = useCallback((myData, sharedData) => {
+    const all = [...(myData || []), ...(sharedData || [])];
+    setCounts({
+      overdue: all.filter(g => g.health_status === 'OVERDUE').length,
+      dueToday: all.filter(g => g.days_remaining === 0 && g.health_status !== 'COMPLETED').length,
+      dueThisWeek: all.filter(g => g.days_remaining <= 7 && g.days_remaining >= 0 && g.health_status !== 'COMPLETED').length,
+      upcoming: all.filter(g => g.days_remaining > 7 && g.health_status !== 'COMPLETED').length,
+    });
+  }, []);
+
   // Debounce search input
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -43,81 +61,117 @@ const DashboardPage = () => {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Fetch groups
+  // Fetch summary counts ONLY on initial mount (unfiltered).
+  // Also called explicitly after data mutations (delete, etc.).
+  const fetchSummaryCounts = useCallback(async () => {
+    // Cancel any in-flight counts request (guards against StrictMode re-mount)
+    if (countsAbortRef.current) {
+      countsAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    countsAbortRef.current = controller;
+
+    try {
+      const [myRes, sharedRes] = await Promise.all([
+        API.get('/groups', { signal: controller.signal }),
+        API.get('/shared-groups', { signal: controller.signal }),
+      ]);
+      if (!controller.signal.aborted) {
+        computeCounts(myRes.data, sharedRes.data);
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        console.error("Failed to fetch summary counts:", err);
+      }
+    }
+  }, [computeCounts]);
+
+  // Initial mount: fetch unfiltered summary counts once
   useEffect(() => {
-    fetchDashboardData();
     fetchSummaryCounts();
-  }, [debouncedSearch, statusFilter, sortBy]);
+    return () => {
+      if (countsAbortRef.current) {
+        countsAbortRef.current.abort();
+      }
+    };
+  }, [fetchSummaryCounts]);
 
-  const fetchSummaryCounts = async () => {
-    try {
-      const myRes = await API.get('/groups');
-      const sharedRes = await API.get('/shared-groups');
-      const all = [...(myRes.data || []), ...(sharedRes.data || [])];
-      
-      setCounts({
-        overdue: all.filter(g => g.health_status === 'OVERDUE').length,
-        dueToday: all.filter(g => g.days_remaining === 0 && g.health_status !== 'COMPLETED').length,
-        dueThisWeek: all.filter(g => g.days_remaining <= 7 && g.days_remaining >= 0 && g.health_status !== 'COMPLETED').length,
-        upcoming: all.filter(g => g.days_remaining > 7 && g.health_status !== 'COMPLETED').length,
-      });
-    } catch (err) {
-      console.error("Failed to fetch summary counts:", err);
+  // Fetch filtered/sorted dashboard data whenever filters change
+  useEffect(() => {
+    // Cancel any in-flight dashboard request (guards against StrictMode re-mount)
+    if (dashboardAbortRef.current) {
+      dashboardAbortRef.current.abort();
     }
-  };
+    const controller = new AbortController();
+    dashboardAbortRef.current = controller;
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    try {
-      let myParams = [];
-      let sharedParams = [];
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        let myParams = [];
+        let sharedParams = [];
 
-      if (debouncedSearch.trim()) {
-        myParams.push(`search=${encodeURIComponent(debouncedSearch.trim())}`);
+        if (debouncedSearch.trim()) {
+          myParams.push(`search=${encodeURIComponent(debouncedSearch.trim())}`);
+        }
+
+        if (statusFilter !== 'all' && statusFilter !== 'upcoming') {
+          myParams.push(`status=${statusFilter}`);
+          sharedParams.push(`status=${statusFilter}`);
+        } else if (statusFilter === 'upcoming') {
+          myParams.push('status=active');
+          sharedParams.push('status=active');
+        }
+
+        if (sortBy !== 'all' && sortBy !== 'progress') {
+          myParams.push(`sort=${sortBy}`);
+          sharedParams.push(`sort=${sortBy}`);
+        }
+
+        const myUrl = '/groups' + (myParams.length ? `?${myParams.join('&')}` : '');
+        const sharedUrl = '/shared-groups' + (sharedParams.length ? `?${sharedParams.join('&')}` : '');
+
+        const [myRes, sharedRes] = await Promise.all([
+          API.get(myUrl, { signal: controller.signal }),
+          API.get(sharedUrl, { signal: controller.signal }),
+        ]);
+
+        if (controller.signal.aborted) return;
+
+        let myData = myRes.data || [];
+        let sharedData = sharedRes.data || [];
+
+        // Filter in-memory for upcoming status (days_remaining > 7)
+        if (statusFilter === 'upcoming') {
+          myData = myData.filter(g => g.days_remaining > 7);
+          sharedData = sharedData.filter(g => g.days_remaining > 7);
+        }
+
+        // Sort in-memory for progress
+        if (sortBy === 'progress') {
+          myData.sort((a, b) => b.progress - a.progress);
+          sharedData.sort((a, b) => b.progress - a.progress);
+        }
+
+        setMyGroups(myData);
+        setSharedGroups(sharedData);
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setToast({ type: 'error', message: err.message });
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
+    };
 
-      if (statusFilter !== 'all' && statusFilter !== 'upcoming') {
-        myParams.push(`status=${statusFilter}`);
-        sharedParams.push(`status=${statusFilter}`);
-      } else if (statusFilter === 'upcoming') {
-        myParams.push('status=active');
-        sharedParams.push('status=active');
-      }
+    fetchDashboardData();
 
-      if (sortBy !== 'all' && sortBy !== 'progress') {
-        myParams.push(`sort=${sortBy}`);
-        sharedParams.push(`sort=${sortBy}`);
-      }
-
-      const myUrl = '/groups' + (myParams.length ? `?${myParams.join('&')}` : '');
-      const sharedUrl = '/shared-groups' + (sharedParams.length ? `?${sharedParams.join('&')}` : '');
-
-      const myRes = await API.get(myUrl);
-      const sharedRes = await API.get(sharedUrl);
-
-      let myData = myRes.data || [];
-      let sharedData = sharedRes.data || [];
-
-      // Filter in-memory for upcoming status (days_remaining > 7)
-      if (statusFilter === 'upcoming') {
-        myData = myData.filter(g => g.days_remaining > 7);
-        sharedData = sharedData.filter(g => g.days_remaining > 7);
-      }
-
-      // Sort in-memory for progress
-      if (sortBy === 'progress') {
-        myData.sort((a, b) => b.progress - a.progress);
-        sharedData.sort((a, b) => b.progress - a.progress);
-      }
-
-      setMyGroups(myData);
-      setSharedGroups(sharedData);
-    } catch (err) {
-      setToast({ type: 'error', message: err.message });
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => {
+      controller.abort();
+    };
+  }, [debouncedSearch, statusFilter, sortBy, refreshKey]);
 
   const handleDelete = async (id, e) => {
     e.stopPropagation();
@@ -132,7 +186,7 @@ const DashboardPage = () => {
       }
     } catch (err) {
       setToast({ type: 'error', message: err.message });
-      fetchDashboardData(); // Revert
+      setRefreshKey(k => k + 1); // Trigger re-fetch to revert optimistic update
     }
   };
 

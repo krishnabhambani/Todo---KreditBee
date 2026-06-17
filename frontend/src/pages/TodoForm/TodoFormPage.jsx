@@ -76,7 +76,13 @@ const TodoFormPage = () => {
       const payload = {
         title: formData.title.trim(),
         description: formData.description.trim(),
-        due_date: formData.due_date ? new Date(formData.due_date).toISOString() : null,
+        due_date: formData.due_date
+          ? (() => {
+              // Build date in local timezone to avoid UTC midnight shifting to previous day
+              const [y, m, d] = formData.due_date.split('-').map(Number);
+              return new Date(y, m - 1, d, 23, 59, 59).toISOString();
+            })()
+          : null,
       };
 
       let response;

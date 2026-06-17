@@ -3,9 +3,10 @@ package controllers
 import (
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/todo-app/backend/apperrors"
+	"github.com/todo-app/backend/dto"
 	"github.com/todo-app/backend/services"
 )
 
@@ -17,58 +18,32 @@ func NewGroupController(service services.TodoService) *GroupController {
 	return &GroupController{todoService: service}
 }
 
-type GroupInput struct {
-	Title       string     `json:"title" binding:"required"`
-	Description string     `json:"description"`
-	DueDate     *time.Time `json:"due_date"`
-}
-
 func (ctrl *GroupController) CreateGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "User not authenticated",
-			"data":    nil,
-		})
+		c.Error(apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
-	var input GroupInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "Title is required",
-			"data":    nil,
-		})
+	var req dto.CreateGroupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequest("title is required"))
 		return
 	}
 
-	group, err := ctrl.todoService.CreateGroup(c.Request.Context(), input.Title, input.Description, input.DueDate, userID.(uint))
+	group, err := ctrl.todoService.CreateGroup(c.Request.Context(), req, userID.(uint))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"success": true,
-		"message": "Group created successfully",
-		"data":    group,
-	})
+	c.JSON(http.StatusCreated, gin.H{"success": true, "message": "Group created successfully", "data": dto.MapTodo(group)})
 }
 
 func (ctrl *GroupController) GetGroups(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "User not authenticated",
-			"data":    nil,
-		})
+		c.Error(apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
@@ -77,144 +52,83 @@ func (ctrl *GroupController) GetGroups(c *gin.Context) {
 	sortParam := c.Query("sort")
 	groups, err := ctrl.todoService.GetGroups(c.Request.Context(), userID.(uint), search, status, sortParam)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "Failed to fetch groups",
-			"data":    nil,
-		})
+		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Groups fetched successfully",
-		"data":    groups,
-	})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Groups retrieved", "data": dto.MapTodos(groups)})
 }
 
 func (ctrl *GroupController) GetGroupByID(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "User not authenticated",
-			"data":    nil,
-		})
+		c.Error(apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "Invalid Group ID",
-			"data":    nil,
-		})
+		c.Error(apperrors.NewBadRequest("invalid group ID"))
 		return
 	}
 
 	group, err := ctrl.todoService.GetGroupByID(c.Request.Context(), uint(id), userID.(uint))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Group fetched successfully",
-		"data":    group,
-	})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Group retrieved", "data": dto.MapTodo(group)})
 }
 
 func (ctrl *GroupController) UpdateGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "User not authenticated",
-			"data":    nil,
-		})
+		c.Error(apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "Invalid Group ID",
-			"data":    nil,
-		})
+		c.Error(apperrors.NewBadRequest("invalid group ID"))
 		return
 	}
 
-	var input GroupInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "Title is required",
-			"data":    nil,
-		})
+	var req dto.UpdateGroupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequest("title is required"))
 		return
 	}
 
-	group, err := ctrl.todoService.UpdateGroup(c.Request.Context(), uint(id), input.Title, input.Description, input.DueDate, userID.(uint))
+	group, err := ctrl.todoService.UpdateGroup(c.Request.Context(), uint(id), req, userID.(uint))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Group updated successfully",
-		"data":    group,
-	})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Group updated successfully", "data": dto.MapTodo(group)})
 }
 
 func (ctrl *GroupController) DeleteGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "User not authenticated",
-			"data":    nil,
-		})
+		c.Error(apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "Invalid Group ID",
-			"data":    nil,
-		})
+		c.Error(apperrors.NewBadRequest("invalid group ID"))
 		return
 	}
 
 	err = ctrl.todoService.DeleteGroup(c.Request.Context(), uint(id), userID.(uint))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Group deleted successfully",
-		"data":    nil,
-	})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Group deleted successfully", "data": nil})
 }

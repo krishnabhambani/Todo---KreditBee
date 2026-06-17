@@ -2,9 +2,11 @@ package repositories
 
 import (
 	"context"
+	"database/sql"
+	"time"
 
+	"github.com/todo-app/backend/database"
 	"github.com/todo-app/backend/models"
-	"gorm.io/gorm"
 )
 
 type UserRepository interface {
@@ -12,44 +14,115 @@ type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (*models.User, error)
 	FindByID(ctx context.Context, id uint) (*models.User, error)
 	SearchUsers(ctx context.Context, query string, excludeUserID uint) ([]models.User, error)
+	UpdatePassword(ctx context.Context, userID uint, hashedPassword string) error
 }
 
 type userRepository struct {
-	db *gorm.DB
+	q *database.Queries
 }
 
-func NewUserRepository(db *gorm.DB) UserRepository {
-	return &userRepository{db: db}
+func NewUserRepository(q *database.Queries) UserRepository {
+	return &userRepository{q: q}
 }
 
 func (r *userRepository) Create(ctx context.Context, user *models.User) error {
-	return r.db.WithContext(ctx).Create(user).Error
+	result, err := r.q.CreateUser(ctx, database.CreateUserParams{
+		Name:     user.Name,
+		Email:    user.Email,
+		Password: user.Password,
+	})
+	if err != nil {
+		return err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	row, err := r.q.GetUserByID(ctx, uint32(id))
+	if err != nil {
+		return err
+	}
+	user.ID = uint(row.ID)
+	user.CreatedAt = row.CreatedAt
+	return nil
 }
 
 func (r *userRepository) FindByEmail(ctx context.Context, email string) (*models.User, error) {
-	var user models.User
-	err := r.db.WithContext(ctx).Where("email = ?", email).First(&user).Error
+	row, err := r.q.GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, err
 	}
-	return &user, nil
+	return dbUserToModel(row), nil
 }
 
 func (r *userRepository) FindByID(ctx context.Context, id uint) (*models.User, error) {
-	var user models.User
-	err := r.db.WithContext(ctx).First(&user, id).Error
+	row, err := r.q.GetUserByID(ctx, uint32(id))
 	if err != nil {
 		return nil, err
 	}
-	return &user, nil
+	return dbUserToModel(row), nil
 }
 
 func (r *userRepository) SearchUsers(ctx context.Context, query string, excludeUserID uint) ([]models.User, error) {
-	var users []models.User
-	searchTerm := "%" + query + "%"
-	err := r.db.WithContext(ctx).
-		Where("id != ? AND (name LIKE ? OR email LIKE ?)", excludeUserID, searchTerm, searchTerm).
-		Limit(20).
-		Find(&users).Error
-	return users, err
+	term := "%" + query + "%"
+	rows, err := r.q.SearchUsers(ctx, uint32(excludeUserID), term)
+	if err != nil {
+		return nil, err
+	}
+	users := make([]models.User, 0, len(rows))
+	for _, row := range rows {
+		users = append(users, *dbUserToModel(row))
+	}
+	return users, nil
 }
+
+func (r *userRepository) UpdatePassword(ctx context.Context, userID uint, hashedPassword string) error {
+	return r.q.UpdateUserPassword(ctx, database.UpdateUserPasswordParams{
+		Password: hashedPassword,
+		ID:       uint32(userID),
+	})
+}
+
+// ── Conversion helpers (shared across all three repository files) ─────────────
+
+// ErrNotFound re-exports sql.ErrNoRows for service-layer callers.
+var ErrNotFound = sql.ErrNoRows
+
+func dbUserToModel(u database.User) *models.User {
+	return &models.User{
+		ID:        uint(u.ID),
+		Name:      u.Name,
+		Email:     u.Email,
+		Password:  u.Password,
+		CreatedAt: u.CreatedAt,
+	}
+}
+
+func toModelTodo(t database.Todo) models.Todo {
+	m := models.Todo{
+		ID:          uint(t.ID),
+		Title:       t.Title,
+		Description: t.Description,
+		Completed:   t.Completed,
+		DueDate:     database.NullTimeTo(t.DueDate),
+		UserID:      uint(t.UserID),
+		CreatedAt:   t.CreatedAt,
+		UpdatedAt:   t.UpdatedAt,
+	}
+	if t.ParentTodoID.Valid {
+		p := uint(t.ParentTodoID.Int32)
+		m.ParentTodoID = &p
+	}
+	return m
+}
+
+func toModelTodos(rows []database.Todo) []models.Todo {
+	todos := make([]models.Todo, 0, len(rows))
+	for _, r := range rows {
+		todos = append(todos, toModelTodo(r))
+	}
+	return todos
+}
+
+// suppress unused warning for nowPtr (used implicitly via time.Now() calls)
+var _ = time.Now

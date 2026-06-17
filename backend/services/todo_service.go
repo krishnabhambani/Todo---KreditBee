@@ -2,35 +2,37 @@ package services
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/todo-app/backend/apperrors"
+	"github.com/todo-app/backend/dto"
 	"github.com/todo-app/backend/models"
 	"github.com/todo-app/backend/repositories"
 )
 
 type TodoService interface {
 	// Group Services
-	CreateGroup(ctx context.Context, title, description string, dueDate *time.Time, userID uint) (*models.Todo, error)
+	CreateGroup(ctx context.Context, req dto.CreateGroupRequest, userID uint) (*models.Todo, error)
 	GetGroups(ctx context.Context, userID uint, search string, status string, sortParam string) ([]models.Todo, error)
 	GetGroupByID(ctx context.Context, id uint, userID uint) (*models.Todo, error)
-	UpdateGroup(ctx context.Context, id uint, title, description string, dueDate *time.Time, userID uint) (*models.Todo, error)
+	UpdateGroup(ctx context.Context, id uint, req dto.UpdateGroupRequest, userID uint) (*models.Todo, error)
 	DeleteGroup(ctx context.Context, id uint, userID uint) error
 
 	// Subtask Services
 	GetSubtasks(ctx context.Context, groupID uint, userID uint) ([]models.Todo, error)
-	CreateSubtask(ctx context.Context, title, description string, dueDate *time.Time, groupID uint, userID uint) (*models.Todo, error)
-	UpdateSubtask(ctx context.Context, id uint, title, description string, dueDate *time.Time, userID uint) (*models.Todo, error)
+	CreateSubtask(ctx context.Context, req dto.CreateSubtaskRequest, userID uint) (*models.Todo, error)
+	UpdateSubtask(ctx context.Context, id uint, req dto.UpdateSubtaskRequest, userID uint) (*models.Todo, error)
 	DeleteSubtask(ctx context.Context, id uint, userID uint) error
 	ToggleCompleteSubtask(ctx context.Context, id uint, userID uint) (*models.Todo, error)
 
 	// Sharing Services
-	ShareGroup(ctx context.Context, groupID, ownerID uint, email, permission string) (*models.GroupShare, error)
-	RemoveShare(ctx context.Context, groupID, ownerID, targetUserID uint) error
-	GetGroupMembers(ctx context.Context, groupID, userID uint) ([]models.GroupShare, error)
-	GetSharedGroups(ctx context.Context, userID uint, status string, sortParam string) ([]models.Todo, error)
+	ShareGroup(ctx context.Context, groupID, ownerID uint, req dto.ShareGroupRequest) (*models.GroupShare, error)
+	GetSharedGroups(ctx context.Context, userID uint, search string, status string, sortParam string) ([]models.GroupShare, error)
+	GetGroupMembers(ctx context.Context, groupID uint, requesterID uint) ([]models.GroupShare, error)
+	RemoveShare(ctx context.Context, groupID uint, ownerID uint, sharedWithUserID uint) error
+	UpdateSharePermission(ctx context.Context, groupID uint, ownerID uint, sharedWithUserID uint, req dto.UpdateShareRoleRequest) error
 	SearchUsers(ctx context.Context, query string, excludeUserID uint) ([]models.User, error)
 	GetPermission(ctx context.Context, entityID, userID uint) (string, error)
 }
@@ -116,56 +118,53 @@ func CalculateGroupHealth(todo *models.Todo) {
 
 // GetPermission evaluates the permissions of a user relative to a group or subtask ID
 func (s *todoService) GetPermission(ctx context.Context, entityID, userID uint) (string, error) {
-	todo, err := s.todoRepo.FindByID(ctx, entityID)
+	// First check if entity is a group owned by the user
+	group, err := s.todoRepo.FindByID(ctx, entityID)
 	if err != nil {
-		return "", errors.New("item not found")
+		return "", apperrors.NewNotFound("todo not found")
+	}
+	
+	// If it's a subtask, look up the parent's permission
+	if group.ParentTodoID != nil {
+		return s.GetPermission(ctx, *group.ParentTodoID, userID)
 	}
 
-	// Cascade up to parent group ID if this is a subtask
-	if todo.ParentTodoID != nil {
-		return s.GetPermission(ctx, *todo.ParentTodoID, userID)
-	}
-
-	// Owner check
-	if todo.UserID == userID {
+	if group.UserID == userID {
 		return "OWNER", nil
 	}
 
-	// Collaborator share check
-	share, err := s.groupShareRepo.FindShare(ctx, todo.ID, userID)
+	// Check if group is shared with user
+	share, err := s.groupShareRepo.FindShare(ctx, entityID, userID)
 	if err == nil && share != nil {
 		return share.Permission, nil
 	}
 
-	return "", errors.New("unauthorized to access this group")
+	return "", apperrors.NewForbidden("user not authorized to access this resource")
 }
 
 // CreateGroup creates a new parent group task with deadline validations
-func (s *todoService) CreateGroup(ctx context.Context, title, description string, dueDate *time.Time, userID uint) (*models.Todo, error) {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return nil, errors.New("group title is required")
-	}
-
-	if dueDate != nil {
-		now := time.Now()
-		// Tiny buffer (1 minute)
-		if dueDate.Before(now.Add(-1 * time.Minute)) {
-			return nil, errors.New("group deadline cannot be in the past")
-		}
-	}
-
+func (s *todoService) CreateGroup(ctx context.Context, req dto.CreateGroupRequest, userID uint) (*models.Todo, error) {
 	group := &models.Todo{
-		Title:       title,
-		Description: description,
-		DueDate:     dueDate,
+		Title:       strings.TrimSpace(req.Title),
+		Description: strings.TrimSpace(req.Description),
+		DueDate:     req.DueDate,
 		UserID:      userID,
 		Completed:   false,
 	}
 
+	if req.DueDate != nil {
+		// Compare dates only (truncate to start of day) to allow today's date
+		now := time.Now()
+		todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		dueDateStart := time.Date(req.DueDate.Year(), req.DueDate.Month(), req.DueDate.Day(), 0, 0, 0, 0, now.Location())
+		if dueDateStart.Before(todayStart) {
+			return nil, apperrors.NewBadRequest("group deadline cannot be in the past")
+		}
+	}
+
 	err := s.todoRepo.Create(ctx, group)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.NewInternal(err, "failed to create group")
 	}
 
 	CalculateGroupHealth(group)
@@ -200,7 +199,7 @@ func (s *todoService) GetGroupByID(ctx context.Context, id uint, userID uint) (*
 
 	group, err := s.todoRepo.FindGroupByID(ctx, id, userID)
 	if err != nil {
-		return nil, errors.New("group not found")
+		return nil, apperrors.NewNotFound("group not found")
 	}
 
 	CalculateGroupHealth(group)
@@ -212,33 +211,28 @@ func (s *todoService) GetGroupByID(ctx context.Context, id uint, userID uint) (*
 }
 
 // UpdateGroup updates parent task group metadata (Owner only)
-func (s *todoService) UpdateGroup(ctx context.Context, id uint, title, description string, dueDate *time.Time, userID uint) (*models.Todo, error) {
+func (s *todoService) UpdateGroup(ctx context.Context, id uint, req dto.UpdateGroupRequest, userID uint) (*models.Todo, error) {
 	permission, err := s.GetPermission(ctx, id, userID)
 	if err != nil {
 		return nil, err
 	}
 
 	if permission != "OWNER" {
-		return nil, errors.New("only group owners can edit group details")
-	}
-
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return nil, errors.New("title is required")
+		return nil, apperrors.NewForbidden("only group owners can edit group details")
 	}
 
 	group, err := s.todoRepo.FindGroupByID(ctx, id, userID)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.NewNotFound("group not found")
 	}
 
-	group.Title = title
-	group.Description = description
-	group.DueDate = dueDate
+	group.Title = strings.TrimSpace(req.Title)
+	group.Description = strings.TrimSpace(req.Description)
+	group.DueDate = req.DueDate
 
 	err = s.todoRepo.Update(ctx, group)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.NewInternal(err, "failed to update group")
 	}
 
 	CalculateGroupHealth(group)
@@ -257,7 +251,7 @@ func (s *todoService) DeleteGroup(ctx context.Context, id uint, userID uint) err
 	}
 
 	if permission != "OWNER" {
-		return errors.New("only group owners can delete groups")
+		return apperrors.NewForbidden("only group owners can delete a group")
 	}
 
 	return s.todoRepo.Delete(ctx, id)
@@ -273,52 +267,50 @@ func (s *todoService) GetSubtasks(ctx context.Context, groupID uint, userID uint
 }
 
 // CreateSubtask inserts a child task under a parent group (Owner or Editor) with validations
-func (s *todoService) CreateSubtask(ctx context.Context, title, description string, dueDate *time.Time, groupID uint, userID uint) (*models.Todo, error) {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return nil, errors.New("subtask title is required")
-	}
-
-	permission, err := s.GetPermission(ctx, groupID, userID)
+func (s *todoService) CreateSubtask(ctx context.Context, req dto.CreateSubtaskRequest, userID uint) (*models.Todo, error) {
+	permission, err := s.GetPermission(ctx, req.GroupID, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	if permission != "OWNER" && permission != "EDIT" {
-		return nil, errors.New("unauthorized to create subtasks in this group")
+	if permission == "VIEW" {
+		return nil, apperrors.NewForbidden("unauthorized to create subtasks in this group")
 	}
 
-	if dueDate != nil {
+	if req.DueDate != nil {
+		// Compare dates only (truncate to start of day) to allow today's date
 		now := time.Now()
-		if dueDate.Before(now.Add(-1 * time.Minute)) {
-			return nil, errors.New("subtask deadline cannot be in the past")
+		todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		dueDateStart := time.Date(req.DueDate.Year(), req.DueDate.Month(), req.DueDate.Day(), 0, 0, 0, 0, now.Location())
+		if dueDateStart.Before(todayStart) {
+			return nil, apperrors.NewBadRequest("subtask deadline cannot be in the past")
 		}
 
 		// Check parent group due date
-		parent, err := s.todoRepo.FindByID(ctx, groupID)
+		parent, err := s.todoRepo.FindByID(ctx, req.GroupID)
 		if err == nil && parent != nil && parent.DueDate != nil {
-			if dueDate.After(*parent.DueDate) {
-				return nil, errors.New("subtask deadline cannot exceed group deadline")
+			if req.DueDate.After(*parent.DueDate) {
+				return nil, apperrors.NewBadRequest("subtask deadline cannot exceed group deadline")
 			}
 		}
 	}
 
 	subtask := &models.Todo{
-		Title:        title,
-		Description:  description,
-		DueDate:      dueDate,
+		Title:        strings.TrimSpace(req.Title),
+		Description:  strings.TrimSpace(req.Description),
+		DueDate:      req.DueDate,
 		UserID:       userID,
-		ParentTodoID: &groupID,
+		ParentTodoID: &req.GroupID,
 		Completed:    false,
 	}
 
 	err = s.todoRepo.Create(ctx, subtask)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.NewInternal(err, "failed to create subtask")
 	}
 
 	// Sync parent group state in GORM
-	parent, err := s.todoRepo.FindGroupByID(ctx, groupID, userID)
+	parent, err := s.todoRepo.FindGroupByID(ctx, req.GroupID, userID)
 	if err == nil {
 		CalculateGroupHealth(parent)
 		_ = s.todoRepo.Update(ctx, parent)
@@ -328,49 +320,47 @@ func (s *todoService) CreateSubtask(ctx context.Context, title, description stri
 }
 
 // UpdateSubtask edits child task parameters (Owner or Editor) with validations
-func (s *todoService) UpdateSubtask(ctx context.Context, id uint, title, description string, dueDate *time.Time, userID uint) (*models.Todo, error) {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return nil, errors.New("title is required")
-	}
-
+func (s *todoService) UpdateSubtask(ctx context.Context, id uint, req dto.UpdateSubtaskRequest, userID uint) (*models.Todo, error) {
 	permission, err := s.GetPermission(ctx, id, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	if permission != "OWNER" && permission != "EDIT" {
-		return nil, errors.New("unauthorized to edit subtasks in this group")
+	if permission == "VIEW" {
+		return nil, apperrors.NewForbidden("unauthorized to update subtasks in this group")
 	}
 
 	subtask, err := s.todoRepo.FindByID(ctx, id)
 	if err != nil {
-		return nil, errors.New("subtask not found")
+		return nil, apperrors.NewNotFound("subtask not found")
 	}
 
-	if dueDate != nil {
+	if req.DueDate != nil {
+		// Compare dates only (truncate to start of day) to allow today's date
 		now := time.Now()
-		if dueDate.Before(now.Add(-1 * time.Minute)) {
-			return nil, errors.New("subtask deadline cannot be in the past")
+		todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		dueDateStart := time.Date(req.DueDate.Year(), req.DueDate.Month(), req.DueDate.Day(), 0, 0, 0, 0, now.Location())
+		if dueDateStart.Before(todayStart) {
+			return nil, apperrors.NewBadRequest("subtask deadline cannot be in the past")
 		}
 
 		if subtask.ParentTodoID != nil {
 			parent, err := s.todoRepo.FindByID(ctx, *subtask.ParentTodoID)
 			if err == nil && parent != nil && parent.DueDate != nil {
-				if dueDate.After(*parent.DueDate) {
-					return nil, errors.New("subtask deadline cannot exceed group deadline")
+				if req.DueDate.After(*parent.DueDate) {
+					return nil, apperrors.NewBadRequest("subtask deadline cannot exceed group deadline")
 				}
 			}
 		}
 	}
 
-	subtask.Title = title
-	subtask.Description = description
-	subtask.DueDate = dueDate
+	subtask.Title = strings.TrimSpace(req.Title)
+	subtask.Description = strings.TrimSpace(req.Description)
+	subtask.DueDate = req.DueDate
 
 	err = s.todoRepo.Update(ctx, subtask)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.NewInternal(err, "failed to update subtask")
 	}
 
 	// Sync parent group state
@@ -392,13 +382,13 @@ func (s *todoService) DeleteSubtask(ctx context.Context, id uint, userID uint) e
 		return err
 	}
 
-	if permission != "OWNER" {
-		return errors.New("only group owners can delete subtasks")
+	if permission == "VIEW" {
+		return apperrors.NewForbidden("unauthorized to delete subtasks in this group")
 	}
 
 	subtask, err := s.todoRepo.FindByID(ctx, id)
 	if err != nil {
-		return errors.New("subtask not found")
+		return apperrors.NewNotFound("subtask not found")
 	}
 
 	err = s.todoRepo.Delete(ctx, id)
@@ -425,19 +415,19 @@ func (s *todoService) ToggleCompleteSubtask(ctx context.Context, id uint, userID
 		return nil, err
 	}
 
-	if permission != "OWNER" && permission != "EDIT" {
-		return nil, errors.New("unauthorized to toggle subtask status")
+	if permission == "VIEW" {
+		return nil, apperrors.NewForbidden("unauthorized to complete subtasks in this group")
 	}
 
 	subtask, err := s.todoRepo.FindByID(ctx, id)
 	if err != nil {
-		return nil, errors.New("subtask not found")
+		return nil, apperrors.NewNotFound("subtask not found")
 	}
 
 	subtask.Completed = !subtask.Completed
 	err = s.todoRepo.Update(ctx, subtask)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.NewInternal(err, "failed to update subtask status")
 	}
 
 	// Sync parent group state
@@ -453,29 +443,29 @@ func (s *todoService) ToggleCompleteSubtask(ctx context.Context, id uint, userID
 }
 
 // ShareGroup adds a user permission to a parent task group (Owner only)
-func (s *todoService) ShareGroup(ctx context.Context, groupID, ownerID uint, email, permission string) (*models.GroupShare, error) {
+func (s *todoService) ShareGroup(ctx context.Context, groupID, ownerID uint, req dto.ShareGroupRequest) (*models.GroupShare, error) {
 	groupPermission, err := s.GetPermission(ctx, groupID, ownerID)
 	if err != nil || groupPermission != "OWNER" {
-		return nil, errors.New("only group owners can manage sharing options")
+		return nil, apperrors.NewForbidden("only group owners can manage sharing options")
 	}
 
-	permission = strings.ToUpper(strings.TrimSpace(permission))
+	permission := strings.ToUpper(strings.TrimSpace(req.Permission))
 	if permission != "VIEW" && permission != "EDIT" {
-		return nil, errors.New("invalid permission parameter: must be VIEW or EDIT")
+		return nil, apperrors.NewBadRequest("invalid permission parameter: must be VIEW or EDIT")
 	}
 
-	targetUser, err := s.userRepo.FindByEmail(ctx, strings.TrimSpace(email))
+	targetUser, err := s.userRepo.FindByEmail(ctx, strings.TrimSpace(req.Email))
 	if err != nil {
-		return nil, errors.New("sharing target user not found")
+		return nil, apperrors.NewBadRequest("sharing target user not found")
 	}
 
 	if targetUser.ID == ownerID {
-		return nil, errors.New("cannot share group with yourself")
+		return nil, apperrors.NewBadRequest("cannot share group with yourself")
 	}
 
 	existing, err := s.groupShareRepo.FindShare(ctx, groupID, targetUser.ID)
 	if err == nil && existing != nil {
-		return nil, errors.New("group is already shared with this user")
+		return nil, apperrors.NewBadRequest("group is already shared with this user")
 	}
 
 	share := &models.GroupShare{
@@ -496,18 +486,39 @@ func (s *todoService) ShareGroup(ctx context.Context, groupID, ownerID uint, ema
 }
 
 // RemoveShare removes access to a shared task group (Owner only)
-func (s *todoService) RemoveShare(ctx context.Context, groupID, ownerID, targetUserID uint) error {
+func (s *todoService) RemoveShare(ctx context.Context, groupID uint, ownerID uint, sharedWithUserID uint) error {
 	groupPermission, err := s.GetPermission(ctx, groupID, ownerID)
 	if err != nil || groupPermission != "OWNER" {
-		return errors.New("only group owners can manage sharing options")
+		return apperrors.NewForbidden("only group owners can manage sharing options")
 	}
 
-	return s.groupShareRepo.Delete(ctx, groupID, targetUserID)
+	return s.groupShareRepo.Delete(ctx, groupID, sharedWithUserID)
+}
+
+// UpdateSharePermission updates a collaborator's role/permission (Owner only)
+func (s *todoService) UpdateSharePermission(ctx context.Context, groupID uint, ownerID uint, sharedWithUserID uint, req dto.UpdateShareRoleRequest) error {
+	groupPermission, err := s.GetPermission(ctx, groupID, ownerID)
+	if err != nil || groupPermission != "OWNER" {
+		return apperrors.NewForbidden("only group owners can manage sharing options")
+	}
+
+	permission := strings.ToUpper(strings.TrimSpace(req.Permission))
+	if permission != "VIEW" && permission != "EDIT" {
+		return apperrors.NewBadRequest("invalid permission: must be VIEW or EDIT")
+	}
+
+	// Verify share exists
+	share, err := s.groupShareRepo.FindShare(ctx, groupID, sharedWithUserID)
+	if err != nil || share == nil {
+		return apperrors.NewNotFound("share not found for this user")
+	}
+
+	return s.groupShareRepo.UpdatePermission(ctx, groupID, sharedWithUserID, permission)
 }
 
 // GetGroupMembers retrieves current collaborators list (For group members)
-func (s *todoService) GetGroupMembers(ctx context.Context, groupID, userID uint) ([]models.GroupShare, error) {
-	_, err := s.GetPermission(ctx, groupID, userID)
+func (s *todoService) GetGroupMembers(ctx context.Context, groupID uint, requesterID uint) ([]models.GroupShare, error) {
+	_, err := s.GetPermission(ctx, groupID, requesterID)
 	if err != nil {
 		return nil, err
 	}
@@ -516,17 +527,26 @@ func (s *todoService) GetGroupMembers(ctx context.Context, groupID, userID uint)
 }
 
 // GetSharedGroups lists parent groups shared with a target user ID (sorted/filtered in memory)
-func (s *todoService) GetSharedGroups(ctx context.Context, userID uint, status string, sortParam string) ([]models.Todo, error) {
+func (s *todoService) GetSharedGroups(ctx context.Context, userID uint, search string, status string, sortParam string) ([]models.GroupShare, error) {
 	shares, err := s.groupShareRepo.FindSharedGroupsByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	var groups []models.Todo
+	var result []models.GroupShare
 	now := time.Now()
+	searchTerm := strings.ToLower(search)
+
 	for _, share := range shares {
 		if share.Group != nil {
 			group := *share.Group
+			
+			if search != "" {
+				if !strings.Contains(strings.ToLower(group.Title), searchTerm) && !strings.Contains(strings.ToLower(group.Description), searchTerm) {
+					continue
+				}
+			}
+
 			CalculateGroupHealth(&group)
 			group.UserPermission = share.Permission
 			count, _ := s.groupShareRepo.CountMembersByGroupID(ctx, group.ID)
@@ -560,39 +580,41 @@ func (s *todoService) GetSharedGroups(ctx context.Context, userID uint, status s
 			}
 
 			if keep {
-				groups = append(groups, group)
+				shareCopy := share
+				shareCopy.Group = &group
+				result = append(result, shareCopy)
 			}
 		}
 	}
 
 	// Apply in-memory sorting
 	if sortParam == "deadline" {
-		sort.Slice(groups, func(i, j int) bool {
-			if groups[i].DueDate == nil {
+		sort.Slice(result, func(i, j int) bool {
+			if result[i].Group.DueDate == nil {
 				return false
 			}
-			if groups[j].DueDate == nil {
+			if result[j].Group.DueDate == nil {
 				return true
 			}
-			return groups[i].DueDate.Before(*groups[j].DueDate)
+			return result[i].Group.DueDate.Before(*result[j].Group.DueDate)
 		})
 	} else if sortParam == "deadline-desc" {
-		sort.Slice(groups, func(i, j int) bool {
-			if groups[i].DueDate == nil {
+		sort.Slice(result, func(i, j int) bool {
+			if result[i].Group.DueDate == nil {
 				return false
 			}
-			if groups[j].DueDate == nil {
+			if result[j].Group.DueDate == nil {
 				return true
 			}
-			return groups[i].DueDate.After(*groups[j].DueDate)
+			return result[i].Group.DueDate.After(*result[j].Group.DueDate)
 		})
 	} else if sortParam == "updated" {
-		sort.Slice(groups, func(i, j int) bool {
-			return groups[i].UpdatedAt.After(groups[j].UpdatedAt)
+		sort.Slice(result, func(i, j int) bool {
+			return result[i].Group.UpdatedAt.After(result[j].Group.UpdatedAt)
 		})
 	}
 
-	return groups, nil
+	return result, nil
 }
 
 // SearchUsers allows group owners to search for other members on email or name

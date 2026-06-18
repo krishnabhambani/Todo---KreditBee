@@ -35,6 +35,7 @@ const GroupDetailsPage = () => {
   // Subtask editing state
   const [editingSubtaskId, setEditingSubtaskId] = useState(null);
   const [editSubtaskData, setEditSubtaskData] = useState({ title: '', description: '', due_date: '' });
+  const todayStr = new Date().toISOString().split('T')[0];
 
   // Sharing states
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -53,6 +54,15 @@ const GroupDetailsPage = () => {
   useEffect(() => {
     fetchGroupDetails();
   }, [id]);
+
+  const checkIsPastDate = (dateString) => {
+    if (!dateString) return false;
+    const selectedDate = new Date(dateString);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    selectedDate.setHours(0, 0, 0, 0);
+    return selectedDate < today;
+  };
 
   const fetchGroupDetails = async () => {
     setLoading(true);
@@ -156,6 +166,12 @@ const GroupDetailsPage = () => {
     e.preventDefault();
     if (!editGroupData.title.trim()) {
       setToast({ type: 'error', message: 'Group title is required' });
+      return;
+    }
+
+    // Past date guardrail
+    if (checkIsPastDate(editGroupData.due_date)) {
+      setToast({ type: 'error', message: 'Due date cannot be in the past' });
       return;
     }
 
@@ -322,13 +338,18 @@ const GroupDetailsPage = () => {
       return;
     }
 
+    // Past date guardrail
+    if (checkIsPastDate(newSubtask.due_date)) {
+      setToast({ type: 'error', message: 'Due date cannot be in the past' });
+      return;
+    }
+
     try {
       const payload = {
         title: newSubtask.title.trim(),
         description: newSubtask.description.trim(),
         due_date: newSubtask.due_date
           ? (() => {
-              // Build date in local timezone to avoid UTC midnight shifting to previous day
               const [y, m, d] = newSubtask.due_date.split('-').map(Number);
               return new Date(y, m - 1, d, 23, 59, 59).toISOString();
             })()
@@ -366,13 +387,18 @@ const GroupDetailsPage = () => {
       return;
     }
 
+    // Past date guardrail
+    if (checkIsPastDate(editSubtaskData.due_date)) {
+      setToast({ type: 'error', message: 'Due date cannot be in the past' });
+      return;
+    }
+
     try {
       const payload = {
         title: editSubtaskData.title.trim(),
         description: editSubtaskData.description.trim(),
         due_date: editSubtaskData.due_date
           ? (() => {
-              // Build date in local timezone to avoid UTC midnight shifting to previous day
               const [y, m, d] = editSubtaskData.due_date.split('-').map(Number);
               return new Date(y, m - 1, d, 23, 59, 59).toISOString();
             })()
@@ -531,6 +557,7 @@ const GroupDetailsPage = () => {
               <input
                 type="date"
                 value={editGroupData.due_date}
+                min={todayStr} /* 👈 This locks out selection of previous calendar days */
                 onChange={(e) => setEditGroupData({ ...editGroupData, due_date: e.target.value })}
                 style={{ padding: '10px 12px', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '0.875rem' }}
               />
@@ -573,9 +600,8 @@ const GroupDetailsPage = () => {
             {(daysLeft >= 0 && daysLeft <= 2 && group.health_status !== 'COMPLETED') || overdueSubtasks > 0 ? (
               <div className={styles.warningsList} style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
                 {daysLeft >= 0 && daysLeft <= 2 && group.health_status !== 'COMPLETED' && (
-                  <div className={`${styles.warningTag} ${styles.warningAlert}`}>
-                    <AlertTriangle size={14} />
-                    <span>⚠ Project Deadline Approaching: {daysLeft} {daysLeft === 1 ? 'day' : 'days'} remaining!</span>
+                  <div>
+                    <span> Project Deadline Approaching: <b>{daysLeft} {daysLeft === 1 ? 'day' : 'days'} remaining!</b></span>
                   </div>
                 )}
                 {overdueSubtasks > 0 && (

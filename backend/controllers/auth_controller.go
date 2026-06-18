@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/todo-app/backend/apperrors"
-	"github.com/todo-app/backend/dto"
+	"github.com/todo-app/backend/controllers/dto"
 	"github.com/todo-app/backend/logger"
 	"github.com/todo-app/backend/services"
 )

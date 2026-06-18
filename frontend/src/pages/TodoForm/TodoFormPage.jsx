@@ -9,7 +9,7 @@ const TodoFormPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = !!id;
-
+  const todayStr = new Date().toISOString().split('T')[0];
   const [formData, setFormData] = useState({ title: '', description: '', due_date: '' });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -52,9 +52,26 @@ const TodoFormPage = () => {
 
   const validate = () => {
     const tempErrors = {};
+    
+    // Title Validation
     if (!formData.title.trim()) {
       tempErrors.title = 'Title is required';
     }
+
+    // Past Date Validation Guardrail
+    if (formData.due_date) {
+      const selectedDate = new Date(formData.due_date);
+      const today = new Date();
+      
+      // Clear time elements to compare purely calendar dates
+      today.setHours(0, 0, 0, 0);
+      selectedDate.setHours(0, 0, 0, 0);
+
+      if (selectedDate < today) {
+        tempErrors.due_date = 'Due date cannot be in the past';
+      }
+    }
+
     setErrors(tempErrors);
     return Object.keys(tempErrors).length === 0;
   };
@@ -157,6 +174,7 @@ const TodoFormPage = () => {
               name="due_date"
               value={formData.due_date}
               onChange={handleChange}
+              min={todayStr}
               disabled={loading}
             />
           </div>

@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/todo-app/backend/apperrors"
-	"github.com/todo-app/backend/dto"
+	"github.com/todo-app/backend/controllers/dto"
 	"github.com/todo-app/backend/services"
 )
 
@@ -50,7 +50,7 @@ func (ctrl *GroupController) GetGroups(c *gin.Context) {
 	search := c.Query("search")
 	status := c.Query("status")
 	sortParam := c.Query("sort")
-	
+
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
 
@@ -61,10 +61,10 @@ func (ctrl *GroupController) GetGroups(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": true, 
-		"message": "Groups retrieved", 
-		"data": dto.MapTodos(groups),
-		"meta": meta,
+		"success": true,
+		"message": "Groups retrieved",
+		"data":    dto.MapTodos(groups),
+		"meta":    meta,
 	})
 }
 

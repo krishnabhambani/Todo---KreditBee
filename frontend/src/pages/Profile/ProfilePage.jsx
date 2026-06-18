@@ -1,4 +1,5 @@
 import React, { useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import styles from './ProfilePage.module.css';
 import { User, Mail, Calendar } from 'lucide-react';
@@ -39,6 +40,9 @@ const ProfilePage = () => {
               <span className={styles.value}>User #{user?.id || 'N/A'}</span>
             </div>
           </div> */}
+        </div>
+        <div className={styles.actions}>
+          <Link to="/profile/password" className={styles.linkButton}>Change Password</Link>
         </div>
       </div>
     </div>

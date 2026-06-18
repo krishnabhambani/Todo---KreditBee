@@ -42,10 +42,7 @@ func (c *appConfig) GetPort() string       { return c.port }
 // LoadConfig reads environment variables (from .env file if present) and
 // returns an immutable Config value. The caller owns the returned value —
 // there is no package-level global.
-//
-// The caller is responsible for logging the JWT warning if needed:
-//
-//	if cfg.GetJWTSecret() == defaultJWTSecret { log.Warn(...) }
+
 func LoadConfig() Config {
 	// Attempt to load .env — ignore error (env may be injected directly in containers)
 	_ = godotenv.Load()

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/todo-app/backend/apperrors"
-	"github.com/todo-app/backend/dto"
+	"github.com/todo-app/backend/controllers/dto"
 	"github.com/todo-app/backend/models"
 	"github.com/todo-app/backend/repositories"
 )
@@ -157,7 +157,7 @@ func (s *todoService) GetPermission(ctx context.Context, entityID, userID uint) 
 	if err != nil {
 		return "", apperrors.NewNotFound("todo not found")
 	}
-	
+
 	// If it's a subtask, look up the parent's permission
 	if group.ParentTodoID != nil {
 		return s.GetPermission(ctx, *group.ParentTodoID, userID)
@@ -303,7 +303,7 @@ func (s *todoService) GetSubtasks(ctx context.Context, groupID uint, userID uint
 	if err != nil {
 		return nil, nil, err
 	}
-	
+
 	paginatedSubtasks, meta := paginate(subtasks, page, limit)
 	return paginatedSubtasks, meta, nil
 }
@@ -582,7 +582,7 @@ func (s *todoService) GetSharedGroups(ctx context.Context, userID uint, search s
 	for _, share := range shares {
 		if share.Group != nil {
 			group := *share.Group
-			
+
 			if search != "" {
 				if !strings.Contains(strings.ToLower(group.Title), searchTerm) && !strings.Contains(strings.ToLower(group.Description), searchTerm) {
 					continue

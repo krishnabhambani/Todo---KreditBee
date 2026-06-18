@@ -58,7 +58,7 @@
   padding: 12px 16px;
   border-radius: 12px;
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: bolder;
   transition: var(--transition-fast);
 }
 

@@ -10,13 +10,13 @@ import (
 	"github.com/todo-app/backend/logger"
 )
 
-// DB is the application-wide connection pool.
-// After ConnectDatabase returns successfully this is safe to use concurrently.
-var DB *sql.DB
+// Note: the DB instance is no longer stored as a package-level global.
+// Callers should receive the *sql.DB from ConnectDatabase and pass it
+// explicitly to consumers that need it.
 
 // ConnectDatabase opens and validates a MySQL connection, then runs
 // all startup DDL (CREATE TABLE IF NOT EXISTS + legacy cleanup).
-func ConnectDatabase(cfg config.Config, log logger.Logger) {
+func ConnectDatabase(cfg config.Config, log logger.Logger) *sql.DB {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		cfg.GetDBUser(), cfg.GetDBPassword(), cfg.GetDBHost(), cfg.GetDBPort(), cfg.GetDBName())
 
@@ -33,17 +33,18 @@ func ConnectDatabase(cfg config.Config, log logger.Logger) {
 		log.Fatal("schema migration failed", logger.F("error", err))
 	}
 
-	DB = sqlDB
 	log.Info("MySQL database connected and migrated successfully",
 		logger.F("host", cfg.GetDBHost()),
 		logger.F("db", cfg.GetDBName()),
 	)
+
+	return sqlDB
 }
 
 // CloseDatabase cleanly closes the MySQL connection pool
-func CloseDatabase() error {
-	if DB != nil {
-		return DB.Close()
+func CloseDatabase(db *sql.DB) error {
+	if db != nil {
+		return db.Close()
 	}
 	return nil
 }

@@ -10,6 +10,7 @@ import RegisterPage from './pages/Register/RegisterPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import TodoFormPage from './pages/TodoForm/TodoFormPage';
 import ProfilePage from './pages/Profile/ProfilePage';
+import UpdatePasswordPage from './pages/UpdatePassword/UpdatePasswordPage';
 import GroupDetailsPage from './pages/Groups/GroupDetailsPage';
 
 function App() {
@@ -78,6 +79,16 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <ProfilePage />
+                </Layout>
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/profile/password" 
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <UpdatePasswordPage />
                 </Layout>
               </ProtectedRoute>
             } 

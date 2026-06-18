@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"database/sql"
+
 	"github.com/gin-gonic/gin"
 	"github.com/todo-app/backend/config"
 	"github.com/todo-app/backend/controllers"
@@ -13,19 +15,15 @@ import (
 
 // SetupRouter wires all dependencies and registers all routes.
 // cfg and log are the two root dependencies injected from main.
-func SetupRouter(cfg config.Config, log logger.Logger) *gin.Engine {
+func SetupRouter(cfg config.Config, log logger.Logger, db *sql.DB) *gin.Engine {
 	router := gin.New()
 
-	// 404 Middleware
-	router.NoRoute(func(c *gin.Context) {
-		c.JSON(404, gin.H{"success": false, "message": "Route not found", "data": nil})
-	})
+	// 404 and 405 handlers
+	router.NoRoute(middleware.NotFoundHandler())
 
-	// 405 Middleware
+	// 405 Middleware — enable Gin to match routes but report method mismatch
 	router.HandleMethodNotAllowed = true
-	router.NoMethod(func(c *gin.Context) {
-		c.JSON(405, gin.H{"success": false, "message": "Method not allowed", "data": nil})
-	})
+	router.NoMethod(middleware.MethodNotAllowedHandler())
 
 	// Global Middlewares — inject logger and jwt secret
 	router.Use(middleware.LoggerMiddleware(log))
@@ -51,7 +49,7 @@ func SetupRouter(cfg config.Config, log logger.Logger) *gin.Engine {
 	})
 
 	// Dependency Injection — build one Queries instance, share across all repos.
-	queries := database.New(database.DB)
+	queries := database.New(db)
 
 	userRepo := repositories.NewUserRepository(queries)
 	todoRepo := repositories.NewTodoRepository(queries)

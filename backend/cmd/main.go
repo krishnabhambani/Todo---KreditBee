@@ -29,10 +29,10 @@ func main() {
 	}
 
 	// 3. Connect and migrate database
-	database.ConnectDatabase(cfg, log)
+	db := database.ConnectDatabase(cfg, log)
 
-	// 4. Setup router with all injected dependencies
-	router := routes.SetupRouter(cfg, log)
+	// 4. Setup router with all injected dependencies (pass DB explicitly)
+	router := routes.SetupRouter(cfg, log, db)
 
 	port := cfg.GetPort()
 	srv := &http.Server{
@@ -62,7 +62,7 @@ func main() {
 		log.Fatal("server forced to shutdown", logger.F("error", err))
 	}
 
-	if err := database.CloseDatabase(); err != nil {
+	if err := database.CloseDatabase(db); err != nil {
 		log.Error("error closing database connection", logger.F("error", err))
 	} else {
 		log.Info("database connection closed cleanly")

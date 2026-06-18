@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/todo-app/backend/apperrors"
-	"github.com/todo-app/backend/dto"
+	"github.com/todo-app/backend/controllers/dto"
 	"github.com/todo-app/backend/models"
 	"github.com/todo-app/backend/repositories"
 	"github.com/todo-app/backend/utils"

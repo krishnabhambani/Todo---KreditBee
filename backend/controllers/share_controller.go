@@ -143,13 +143,22 @@ func (ctrl *ShareController) GetSharedGroups(c *gin.Context) {
 	status := c.Query("status")
 	sortParam := c.Query("sort")
 	search := c.Query("search")
-	groups, err := ctrl.todoService.GetSharedGroups(c.Request.Context(), userID.(uint), search, status, sortParam)
+	
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+
+	groups, meta, err := ctrl.todoService.GetSharedGroups(c.Request.Context(), userID.(uint), search, status, sortParam, page, limit)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Shared groups fetched successfully", "data": dto.MapGroupShareList(groups)})
+	c.JSON(http.StatusOK, gin.H{
+		"success": true, 
+		"message": "Shared groups fetched successfully", 
+		"data": dto.MapGroupShareList(groups),
+		"meta": meta,
+	})
 }
 
 func (ctrl *ShareController) SearchUsers(c *gin.Context) {

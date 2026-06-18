@@ -32,7 +32,10 @@ func (ctrl *SubtaskController) GetSubtasks(c *gin.Context) {
 		return
 	}
 
-	subtasks, err := ctrl.todoService.GetSubtasks(c.Request.Context(), uint(groupID), userID.(uint))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+
+	subtasks, meta, err := ctrl.todoService.GetSubtasks(c.Request.Context(), uint(groupID), userID.(uint), page, limit)
 	if err != nil {
 		c.Error(err)
 		return
@@ -42,6 +45,7 @@ func (ctrl *SubtaskController) GetSubtasks(c *gin.Context) {
 		"success": true,
 		"message": "Subtasks fetched successfully",
 		"data":    dto.MapTodos(subtasks),
+		"meta":    meta,
 	})
 }
 

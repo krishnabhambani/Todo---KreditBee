@@ -50,13 +50,22 @@ func (ctrl *GroupController) GetGroups(c *gin.Context) {
 	search := c.Query("search")
 	status := c.Query("status")
 	sortParam := c.Query("sort")
-	groups, err := ctrl.todoService.GetGroups(c.Request.Context(), userID.(uint), search, status, sortParam)
+	
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+
+	groups, meta, err := ctrl.todoService.GetGroups(c.Request.Context(), userID.(uint), search, status, sortParam, page, limit)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Groups retrieved", "data": dto.MapTodos(groups)})
+	c.JSON(http.StatusOK, gin.H{
+		"success": true, 
+		"message": "Groups retrieved", 
+		"data": dto.MapTodos(groups),
+		"meta": meta,
+	})
 }
 
 func (ctrl *GroupController) GetGroupByID(c *gin.Context) {

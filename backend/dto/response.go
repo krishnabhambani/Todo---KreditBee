@@ -143,3 +143,14 @@ func MapGroupShareList(shares []models.GroupShare) []GroupShareResponse {
 	}
 	return res
 }
+
+// -----------------------------------------------------------------------------
+// Pagination Meta
+// -----------------------------------------------------------------------------
+
+type PaginationMeta struct {
+	TotalItems  int `json:"total_items"`
+	TotalPages  int `json:"total_pages"`
+	CurrentPage int `json:"current_page"`
+	Limit       int `json:"limit"`
+}

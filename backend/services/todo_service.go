@@ -15,13 +15,13 @@ import (
 type TodoService interface {
 	// Group Services
 	CreateGroup(ctx context.Context, req dto.CreateGroupRequest, userID uint) (*models.Todo, error)
-	GetGroups(ctx context.Context, userID uint, search string, status string, sortParam string) ([]models.Todo, error)
+	GetGroups(ctx context.Context, userID uint, search string, status string, sortParam string, page, limit int) ([]models.Todo, *dto.PaginationMeta, error)
 	GetGroupByID(ctx context.Context, id uint, userID uint) (*models.Todo, error)
 	UpdateGroup(ctx context.Context, id uint, req dto.UpdateGroupRequest, userID uint) (*models.Todo, error)
 	DeleteGroup(ctx context.Context, id uint, userID uint) error
 
 	// Subtask Services
-	GetSubtasks(ctx context.Context, groupID uint, userID uint) ([]models.Todo, error)
+	GetSubtasks(ctx context.Context, groupID uint, userID uint, page, limit int) ([]models.Todo, *dto.PaginationMeta, error)
 	CreateSubtask(ctx context.Context, req dto.CreateSubtaskRequest, userID uint) (*models.Todo, error)
 	UpdateSubtask(ctx context.Context, id uint, req dto.UpdateSubtaskRequest, userID uint) (*models.Todo, error)
 	DeleteSubtask(ctx context.Context, id uint, userID uint) error
@@ -29,7 +29,7 @@ type TodoService interface {
 
 	// Sharing Services
 	ShareGroup(ctx context.Context, groupID, ownerID uint, req dto.ShareGroupRequest) (*models.GroupShare, error)
-	GetSharedGroups(ctx context.Context, userID uint, search string, status string, sortParam string) ([]models.GroupShare, error)
+	GetSharedGroups(ctx context.Context, userID uint, search string, status string, sortParam string, page, limit int) ([]models.GroupShare, *dto.PaginationMeta, error)
 	GetGroupMembers(ctx context.Context, groupID uint, requesterID uint) ([]models.GroupShare, error)
 	RemoveShare(ctx context.Context, groupID uint, ownerID uint, sharedWithUserID uint) error
 	UpdateSharePermission(ctx context.Context, groupID uint, ownerID uint, sharedWithUserID uint, req dto.UpdateShareRoleRequest) error
@@ -53,6 +53,40 @@ func NewTodoService(
 		groupShareRepo: groupShareRepo,
 		userRepo:       userRepo,
 	}
+}
+
+// Helper: Pagination
+func paginate[T any](items []T, page, limit int) ([]T, *dto.PaginationMeta) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	totalItems := len(items)
+	totalPages := (totalItems + limit - 1) / limit
+
+	start := (page - 1) * limit
+	if start > totalItems {
+		start = totalItems
+	}
+	end := start + limit
+	if end > totalItems {
+		end = totalItems
+	}
+
+	meta := &dto.PaginationMeta{
+		TotalItems:  totalItems,
+		TotalPages:  totalPages,
+		CurrentPage: page,
+		Limit:       limit,
+	}
+
+	if start >= totalItems {
+		return []T{}, meta
+	}
+
+	return items[start:end], meta
 }
 
 // Helper: Calculate group progress parameters dynamically
@@ -173,11 +207,11 @@ func (s *todoService) CreateGroup(ctx context.Context, req dto.CreateGroupReques
 	return group, nil
 }
 
-// GetGroups fetches all groups owned by a user with status/sort filters
-func (s *todoService) GetGroups(ctx context.Context, userID uint, search string, status string, sortParam string) ([]models.Todo, error) {
+// GetGroups fetches all groups owned by a user with status/sort filters and pagination
+func (s *todoService) GetGroups(ctx context.Context, userID uint, search string, status string, sortParam string, page, limit int) ([]models.Todo, *dto.PaginationMeta, error) {
 	groups, err := s.todoRepo.FindAllGroupsByUserID(ctx, userID, search, status, sortParam)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	for i := range groups {
@@ -186,7 +220,9 @@ func (s *todoService) GetGroups(ctx context.Context, userID uint, search string,
 		count, _ := s.groupShareRepo.CountMembersByGroupID(ctx, groups[i].ID)
 		groups[i].MemberCount = count
 	}
-	return groups, nil
+
+	paginatedGroups, meta := paginate(groups, page, limit)
+	return paginatedGroups, meta, nil
 }
 
 // GetGroupByID fetches details for a specific group (if authorized)
@@ -258,12 +294,18 @@ func (s *todoService) DeleteGroup(ctx context.Context, id uint, userID uint) err
 }
 
 // GetSubtasks fetches subtasks
-func (s *todoService) GetSubtasks(ctx context.Context, groupID uint, userID uint) ([]models.Todo, error) {
+func (s *todoService) GetSubtasks(ctx context.Context, groupID uint, userID uint, page, limit int) ([]models.Todo, *dto.PaginationMeta, error) {
 	_, err := s.GetPermission(ctx, groupID, userID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return s.todoRepo.FindSubtasksByGroupID(ctx, groupID, userID)
+	subtasks, err := s.todoRepo.FindSubtasksByGroupID(ctx, groupID, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	
+	paginatedSubtasks, meta := paginate(subtasks, page, limit)
+	return paginatedSubtasks, meta, nil
 }
 
 // CreateSubtask inserts a child task under a parent group (Owner or Editor) with validations
@@ -527,10 +569,10 @@ func (s *todoService) GetGroupMembers(ctx context.Context, groupID uint, request
 }
 
 // GetSharedGroups lists parent groups shared with a target user ID (sorted/filtered in memory)
-func (s *todoService) GetSharedGroups(ctx context.Context, userID uint, search string, status string, sortParam string) ([]models.GroupShare, error) {
+func (s *todoService) GetSharedGroups(ctx context.Context, userID uint, search string, status string, sortParam string, page, limit int) ([]models.GroupShare, *dto.PaginationMeta, error) {
 	shares, err := s.groupShareRepo.FindSharedGroupsByUserID(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var result []models.GroupShare
@@ -614,7 +656,8 @@ func (s *todoService) GetSharedGroups(ctx context.Context, userID uint, search s
 		})
 	}
 
-	return result, nil
+	paginatedResult, meta := paginate(result, page, limit)
+	return paginatedResult, meta, nil
 }
 
 // SearchUsers allows group owners to search for other members on email or name

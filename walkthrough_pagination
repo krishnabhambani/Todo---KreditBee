@@ -1,0 +1,32 @@
+# Pagination Implementation Summary
+
+I've successfully implemented pagination across the list endpoints for the Todos API.
+
+## Changes Made
+
+### 1. Standardized Pagination Response Metadata
+Added a standard `PaginationMeta` struct to `backend/dto/response.go`:
+```go
+type PaginationMeta struct {
+	TotalItems  int `json:"total_items"`
+	TotalPages  int `json:"total_pages"`
+	CurrentPage int `json:"current_page"`
+	Limit       int `json:"limit"`
+}
+```
+
+### 2. Service Layer Pagination Helper
+Added a generic `paginate` helper function in `backend/services/todo_service.go`. This helper safely creates page slices from fully filtered/sorted memory slices and auto-generates the `PaginationMeta`. 
+
+> [!TIP]
+> Using a generic `[T any]` allowed the pagination helper to seamlessly work for both `[]models.Todo` (groups and subtasks) and `[]models.GroupShare` (shared groups).
+
+### 3. API Enhancements
+Updated the `TodoService` and following Controllers to accept `page` and `limit` queries (defaulting to page 1 and limit 10), and embed the metadata inside a new `meta` object in the JSON responses:
+- **`GetGroups`** in [group_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/group_controller.go)
+- **`GetSubtasks`** in [subtask_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/subtask_controller.go)
+- **`GetSharedGroups`** in [share_controller.go](file:///d:/Todo%20KreditBee/backend/controllers/share_controller.go)
+
+## Verification
+- Ran `go test ./...` in the `backend/` directory, confirming the interface changes didn't break existing business logic tests (`todo_service_test.go`).
+- The Go build passes correctly.

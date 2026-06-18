@@ -78,7 +78,7 @@ func runMigrations(db *sql.DB, log logger.Logger) error {
 		`CREATE TABLE IF NOT EXISTS todos (
 			id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 			title          VARCHAR(255) NOT NULL,
-			description    TEXT NOT NULL DEFAULT '',
+			description    TEXT NOT NULL,
 			completed      BOOLEAN NOT NULL DEFAULT FALSE,
 			due_date       TIMESTAMP NULL DEFAULT NULL,
 			user_id        INT UNSIGNED NOT NULL,

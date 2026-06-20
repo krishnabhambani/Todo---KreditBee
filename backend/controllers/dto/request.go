@@ -46,7 +46,7 @@ type CreateSubtaskRequest struct {
 	Title       string     `json:"title" binding:"required"`
 	Description string     `json:"description"`
 	DueDate     *time.Time `json:"due_date"`
-	GroupID     uint       `json:"group_id" binding:"required"`
+	GroupID     uint       `json:"-"` // Populated from URL path (:id), not from JSON body
 }
 
 type UpdateSubtaskRequest struct {

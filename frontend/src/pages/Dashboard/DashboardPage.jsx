@@ -46,9 +46,9 @@ const DashboardPage = () => {
   const computeCounts = useCallback((myData, sharedData) => {
     const all = [...(myData || []), ...(sharedData || [])];
     setCounts({
-      overdue: all.filter(g => g.health_status === 'OVERDUE').length,
+      overdue: all.filter(g => g.health_status === 'OVERDUE' && !g.completed).length,
       dueToday: all.filter(g => g.days_remaining === 0 && g.health_status !== 'COMPLETED').length,
-      dueThisWeek: all.filter(g => g.days_remaining <= 7 && g.days_remaining >= 0 && g.health_status !== 'COMPLETED').length,
+      dueThisWeek: all.filter(g => g.days_remaining > 0 && g.days_remaining <= 7 && g.health_status !== 'COMPLETED').length,
       upcoming: all.filter(g => g.days_remaining > 7 && g.health_status !== 'COMPLETED').length,
     });
   }, []);
@@ -488,11 +488,20 @@ const DashboardPage = () => {
             
             {filteredSharedGroups.length > 0 ? (
               <div className={styles.todoGrid}>
-                {filteredSharedGroups.map(group => {
+                {filteredSharedGroups.map(shareRecord => {
+                  // Backend returns GroupShare; extract nested Todo and User objects
+                  const group = shareRecord.group || shareRecord;
+                  const ownerName = shareRecord.owner?.name || group.owner?.name || 'Unknown Creator';
+                  const permissionLabel = shareRecord.permission === 'EDIT' ? 'Editor' : 'Viewer';
+                  
+                  // Safe progress calculation with fallback for NaN
+                  const totalSubtasks = group.total_subtasks || 0;
+                  const completedSubtasks = group.completed_subtasks || 0;
+                  const safeProgress = totalSubtasks === 0 ? 0 : Math.round((completedSubtasks / totalSubtasks) * 100);
+                  
                   const isOverdue = group.health_status === 'OVERDUE';
                   const daysLeft = group.days_remaining;
                   const overdueSubtasks = getOverdueSubtasksCount(group);
-                  const permissionLabel = group.user_permission === 'EDIT' ? 'Editor' : 'Viewer';
                   
                   return (
                     <div 
@@ -520,7 +529,7 @@ const DashboardPage = () => {
                       <div className={styles.badgesRow}>
                         <span className={styles.ownerBadge}>
                           <User size={12} />
-                          <span>Owner: {group.owner?.name || 'Unknown'}</span>
+                          <span>Owner: {ownerName}</span>
                         </span>
                         <span className={styles.memberBadge} style={{ backgroundColor: 'var(--color-success-light)', color: 'var(--color-success)' }}>
                           <span>Access: {permissionLabel}</span>
@@ -554,13 +563,13 @@ const DashboardPage = () => {
                       {/* Progress Tracker */}
                       <div className={styles.progressContainer}>
                         <div className={styles.progressText}>
-                          <span>{group.completed_subtasks} / {group.total_subtasks} Completed</span>
-                          <span>{Math.round(group.progress)}%</span>
+                          <span>{completedSubtasks} / {totalSubtasks} Completed</span>
+                          <span>{safeProgress}%</span>
                         </div>
                         <div className={styles.progressBarTrack}>
                           <div 
                             className={`${styles.progressBarFill} ${group.completed ? styles.progressBarFillCompleted : ''}`} 
-                            style={{ width: `${group.progress}%` }}
+                            style={{ width: `${safeProgress}%` }}
                           />
                         </div>
                       </div>

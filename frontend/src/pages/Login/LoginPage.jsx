@@ -2,7 +2,7 @@ import React, { useState, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import Toast from '../../components/Toast/Toast';
-import { CheckSquare, LogIn } from 'lucide-react';
+import { CheckSquare, LogIn, AlertCircle } from 'lucide-react';
 import styles from './LoginPage.module.css';
 
 const LoginPage = () => {
@@ -13,6 +13,7 @@ const LoginPage = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [credentialError, setCredentialError] = useState('');
 
   const validate = () => {
     const tempErrors = {};
@@ -34,6 +35,10 @@ const LoginPage = () => {
     if (errors[name]) {
       setErrors({ ...errors, [name]: '' });
     }
+    // Clear credential error when user starts typing
+    if (credentialError) {
+      setCredentialError('');
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -41,6 +46,7 @@ const LoginPage = () => {
     if (!validate()) return;
 
     setLoading(true);
+    setCredentialError('');
     const result = await login(formData.email, formData.password);
     setLoading(false);
 
@@ -48,6 +54,10 @@ const LoginPage = () => {
       setToast({ type: 'success', message: 'Logged in successfully!' });
       setTimeout(() => navigate('/'), 1000);
     } else {
+      // Set credential error for invalid login attempts
+      if (result.message.toLowerCase().includes('invalid')) {
+        setCredentialError(result.message);
+      }
       setToast({ type: 'error', message: result.message });
     }
   };
@@ -65,6 +75,12 @@ const LoginPage = () => {
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>
+          {credentialError && (
+            <div className={styles.credentialErrorAlert}>
+              <AlertCircle size={16} style={{ marginRight: '8px' }} />
+              <span>{credentialError}</span>
+            </div>
+          )}
           <div className={styles.inputGroup}>
             <label>Email Address</label>
             <input
@@ -73,7 +89,7 @@ const LoginPage = () => {
               placeholder="e.g. user@example.com"
               value={formData.email}
               onChange={handleChange}
-              className={errors.email ? styles.inputError : ''}
+              className={`${errors.email ? styles.inputError : ''} ${credentialError ? styles.inputCredentialError : ''}`}
               disabled={loading}
             />
             {errors.email && <span className={styles.errorText}>{errors.email}</span>}
@@ -87,7 +103,7 @@ const LoginPage = () => {
               placeholder="••••••••"
               value={formData.password}
               onChange={handleChange}
-              className={errors.password ? styles.inputError : ''}
+              className={`${errors.password ? styles.inputError : ''} ${credentialError ? styles.inputCredentialError : ''}`}
               disabled={loading}
             />
             {errors.password && <span className={styles.errorText}>{errors.password}</span>}

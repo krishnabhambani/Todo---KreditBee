@@ -30,7 +30,21 @@ export const AuthProvider = ({ children }) => {
       }
       return { success: false, message: response.message };
     } catch (error) {
-      return { success: false, message: error.message };
+      // Handle different error scenarios
+      let errorMessage = 'Invalid email or password. Please try again.';
+      
+      if (error.message) {
+        // Check if it's a specific credential error
+        if (error.message.toLowerCase().includes('invalid')) {
+          errorMessage = 'Invalid email or password. Please check your credentials.';
+        } else if (error.message.toLowerCase().includes('unauthorized')) {
+          errorMessage = 'Invalid email or password. Please check your credentials.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      return { success: false, message: errorMessage };
     }
   };
 

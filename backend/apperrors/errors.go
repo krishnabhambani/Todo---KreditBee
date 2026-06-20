@@ -57,3 +57,4 @@ func NewInternal(err error, message string) *AppError {
 		Err:        err,
 	}
 }
+

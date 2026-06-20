@@ -3,7 +3,7 @@ package config
 import (
 	"os"
 
-	"github.com/joho/godotenv"
+	// "github.com/joho/godotenv"
 )
 
 // Config is the application configuration contract.
@@ -45,7 +45,7 @@ func (c *appConfig) GetPort() string       { return c.port }
 
 func LoadConfig() Config {
 	// Attempt to load .env — ignore error (env may be injected directly in containers)
-	_ = godotenv.Load()
+	// _ = godotenv.Load()
 
 	return &appConfig{
 		dbHost:     getEnv("DB_HOST", "localhost"),

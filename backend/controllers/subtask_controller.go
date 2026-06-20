@@ -3,6 +3,7 @@ package controllers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/todo-app/backend/apperrors"
@@ -56,11 +57,29 @@ func (ctrl *SubtaskController) CreateSubtask(c *gin.Context) {
 		return
 	}
 
-	var req dto.CreateSubtaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(apperrors.NewBadRequest("title and group_id are required"))
+	// 1. Extract the group ID from the URL path parameter (:id)
+	groupIDStr := c.Param("id")
+	groupID, err := strconv.ParseUint(groupIDStr, 10, 32)
+	if err != nil {
+		c.Error(apperrors.NewBadRequest("invalid group ID"))
 		return
 	}
+
+	var req dto.CreateSubtaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequest("invalid request payload"))
+		return
+	}
+
+	// Normalize and validate title explicitly (reject blank/whitespace-only titles)
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" {
+		c.Error(apperrors.NewBadRequest("title is required"))
+		return
+	}
+
+	// 2. Explicitly bind the URL GroupID to your DTO structure (always use path param)
+	req.GroupID = uint(groupID)
 
 	subtask, err := ctrl.todoService.CreateSubtask(c.Request.Context(), req, userID.(uint))
 	if err != nil {

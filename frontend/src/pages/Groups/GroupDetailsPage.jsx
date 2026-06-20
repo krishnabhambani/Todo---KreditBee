@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import API from '../../services/api';
 import Toast from '../../components/Toast/Toast';
@@ -50,9 +50,16 @@ const GroupDetailsPage = () => {
   const [editGroupData, setEditGroupData] = useState({ title: '', description: '', due_date: '' });
   const [editGroupLoading, setEditGroupLoading] = useState(false);
   const [updatingRoleId, setUpdatingRoleId] = useState(null);
+  const searchTimeoutRef = useRef(null);
+  const latestSearchQueryRef = useRef('');
 
   useEffect(() => {
     fetchGroupDetails();
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, [id]);
 
   const checkIsPastDate = (dateString) => {
@@ -101,23 +108,44 @@ const GroupDetailsPage = () => {
     setSearchResults([]);
     setSharingEmail('');
     setSharePermission('VIEW');
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = null;
+    }
+    latestSearchQueryRef.current = '';
   };
 
-  const handleSearchUsers = async (query) => {
-    setSearchQuery(query);
-    setSharingEmail(query); // Sync typed text as fallback
+  const performUserSearch = async (query) => {
     if (!query.trim()) {
       setSearchResults([]);
       return;
     }
+
     try {
-      const response = await API.get(`/users?search=${encodeURIComponent(query)}`);
+      const response = await API.get(`/users?query=${encodeURIComponent(query)}`);
       if (response.success && response.data) {
-        setSearchResults(response.data || []);
+        if (latestSearchQueryRef.current === query) {
+          setSearchResults(response.data || []);
+        }
       }
     } catch (err) {
-      console.error("User search failed:", err);
+      console.error('User search failed:', err);
     }
+  };
+
+  const handleSearchUsers = (query) => {
+    setSearchQuery(query);
+    setSharingEmail(query); // Sync typed text as fallback
+    latestSearchQueryRef.current = query;
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      performUserSearch(query);
+      searchTimeoutRef.current = null;
+    }, 300);
   };
 
   const handleSelectUser = (user) => {
@@ -836,7 +864,7 @@ const GroupDetailsPage = () => {
                     >
                       Cancel
                     </button>
-                    <button type="submit" className={styles.submitBtn}>
+                    <button type="submit" className={styles.submitBtn} disabled={newSubtask.title.trim() === ''}>
                       <Plus size={16} />
                       <span>Add Task</span>
                     </button>

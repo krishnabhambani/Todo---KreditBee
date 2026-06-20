@@ -58,15 +58,16 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatal("server forced to shutdown", logger.F("error", err))
 	}
-
 	if err := database.CloseDatabase(db); err != nil {
 		log.Error("error closing database connection", logger.F("error", err))
 	} else {
 		log.Info("database connection closed cleanly")
 	}
+
 
 	log.Info("server exiting")
 }

@@ -115,16 +115,14 @@ func CalculateGroupHealth(todo *models.Todo) {
 
 	now := time.Now()
 
-	// Days remaining calculations
+	// Days remaining calculations (truncate to midnight for accurate day counting)
 	if todo.DueDate != nil {
-		diff := todo.DueDate.Sub(now)
-		days := int(diff.Hours() / 24)
-		if diff.Hours() > 0 && diff.Hours() < 24 {
-			days = 1
-		} else if diff.Hours() < 0 {
-			days = int(diff.Hours() / 24)
-		}
-		todo.DaysRemaining = days
+		// Truncate to midnight for both dates to ensure accurate day counting
+		todayMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		dueDateMidnight := time.Date(todo.DueDate.Year(), todo.DueDate.Month(), todo.DueDate.Day(), 0, 0, 0, 0, todo.DueDate.Location())
+
+		diff := dueDateMidnight.Sub(todayMidnight)
+		todo.DaysRemaining = int(diff.Hours() / 24)
 	} else {
 		todo.DaysRemaining = 9999
 	}
@@ -227,15 +225,21 @@ func (s *todoService) GetGroups(ctx context.Context, userID uint, search string,
 
 // GetGroupByID fetches details for a specific group (if authorized)
 func (s *todoService) GetGroupByID(ctx context.Context, id uint, userID uint) (*models.Todo, error) {
-	// Verify permission first
-	permission, err := s.GetPermission(ctx, id, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	group, err := s.todoRepo.FindGroupByID(ctx, id, userID)
+	// Fetch the group without ownership filter (to allow shared access)
+	group, err := s.todoRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, apperrors.NewNotFound("group not found")
+	}
+
+	// Reject if this is a subtask (method is for groups only)
+	if group.ParentTodoID != nil {
+		return nil, apperrors.NewNotFound("group not found")
+	}
+
+	// Verify permission (checks ownership and shares)
+	permission, err := s.GetPermission(ctx, id, userID)
+	if err != nil {
+		return nil, apperrors.NewForbidden("group not found or access denied")
 	}
 
 	CalculateGroupHealth(group)
@@ -576,7 +580,7 @@ func (s *todoService) GetSharedGroups(ctx context.Context, userID uint, search s
 	}
 
 	var result []models.GroupShare
-	now := time.Now()
+	// now := time.Now()
 	searchTerm := strings.ToLower(search)
 
 	for _, share := range shares {
@@ -598,23 +602,11 @@ func (s *todoService) GetSharedGroups(ctx context.Context, userID uint, search s
 			keep := true
 			switch status {
 			case "overdue":
-				keep = group.DueDate != nil && group.DueDate.Before(now) && !group.Completed
+				keep = group.HealthStatus == "OVERDUE" && !group.Completed
 			case "due-today":
-				if group.DueDate != nil {
-					todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-					todayEnd := todayStart.Add(24 * time.Hour)
-					keep = !group.DueDate.Before(todayStart) && group.DueDate.Before(todayEnd)
-				} else {
-					keep = false
-				}
+				keep = group.DaysRemaining == 0 && group.HealthStatus != "COMPLETED"
 			case "due-this-week":
-				if group.DueDate != nil {
-					todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-					weekEnd := todayStart.Add(7 * 24 * time.Hour)
-					keep = !group.DueDate.Before(todayStart) && group.DueDate.Before(weekEnd)
-				} else {
-					keep = false
-				}
+				keep = group.DaysRemaining > 0 && group.DaysRemaining <= 7 && group.HealthStatus != "COMPLETED"
 			case "completed":
 				keep = group.Completed
 			case "active":

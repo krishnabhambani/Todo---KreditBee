@@ -1,5 +1,7 @@
 package logger
 
+import "context"
+
 // Field is a structured key-value pair attached to a log entry.
 type Field struct {
 	Key   string
@@ -15,17 +17,17 @@ func F(key string, val any) Field {
 // All consumers depend on this interface, never on a concrete type.
 type Logger interface {
 	// Info logs a message at INFO level — normal operational events.
-	Info(msg string, fields ...Field)
+	Info(ctx context.Context, msg string, fields ...Field)
 
 	// Warn logs a message at WARN level — unexpected but non-fatal conditions.
-	Warn(msg string, fields ...Field)
+	Warn(ctx context.Context, msg string, fields ...Field)
 
 	// Error logs a message at ERROR level — failures that need attention.
-	Error(msg string, fields ...Field)
+	Error(ctx context.Context, msg string, fields ...Field)
 
 	// Debug logs a message at DEBUG level — verbose development details.
-	Debug(msg string, fields ...Field)
+	Debug(ctx context.Context, msg string, fields ...Field)
 
 	// Fatal logs at FATAL level then calls os.Exit(1).
-	Fatal(msg string, fields ...Field)
+	Fatal(ctx context.Context, msg string, fields ...Field)
 }

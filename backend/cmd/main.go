@@ -18,14 +18,14 @@ func main() {
 	// 1. Bootstrap logger first — everything else logs through it
 	log := logger.NewLogger()
 
-	log.Info("starting Todo Application backend")
+	log.Info(context.Background(), "starting Todo Application backend")
 
 	// 2. Load configuration — returns interface, no global state
 	cfg := config.LoadConfig()
 
 	// Warn if running with the insecure default JWT secret
 	if cfg.GetJWTSecret() == config.DefaultJWTSecret() {
-		log.Warn("using default JWT secret — set JWT_SECRET env variable before deploying to production")
+		log.Warn(context.Background(), "using default JWT secret — set JWT_SECRET env variable before deploying to production")
 	}
 
 	// 3. Connect and migrate database
@@ -42,9 +42,9 @@ func main() {
 
 	// 5. Start server in a goroutine
 	go func() {
-		log.Info("server listening", logger.F("port", port))
+		log.Info(context.Background(), "server listening", logger.F("port", port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal("server failed to start", logger.F("error", err))
+			log.Fatal(context.Background(), "server failed to start", logger.F("error", err))
 		}
 	}()
 
@@ -52,7 +52,7 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Info("shutting down server...")
+	log.Info(context.Background(), "shutting down server...")
 
 	// 10 seconds timeout for in-flight requests
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -60,14 +60,14 @@ func main() {
 
 	
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("server forced to shutdown", logger.F("error", err))
+		log.Fatal(context.Background(), "server forced to shutdown", logger.F("error", err))
 	}
 	if err := database.CloseDatabase(db); err != nil {
-		log.Error("error closing database connection", logger.F("error", err))
+		log.Error(context.Background(), "error closing database connection", logger.F("error", err))
 	} else {
-		log.Info("database connection closed cleanly")
+		log.Info(context.Background(), "database connection closed cleanly")
 	}
 
 
-	log.Info("server exiting")
+	log.Info(context.Background(), "server exiting")
 }

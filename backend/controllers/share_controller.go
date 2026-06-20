@@ -11,15 +11,24 @@ import (
 	"github.com/todo-app/backend/services"
 )
 
-type ShareController struct {
+type ShareController interface {
+	ShareGroup(c *gin.Context)
+	RemoveShare(c *gin.Context)
+	UpdateSharePermission(c *gin.Context)
+	GetGroupMembers(c *gin.Context)
+	GetSharedGroups(c *gin.Context)
+	SearchUsers(c *gin.Context)
+}
+
+type shareController struct {
 	todoService services.TodoService
 }
 
-func NewShareController(service services.TodoService) *ShareController {
-	return &ShareController{todoService: service}
+func NewShareController(service services.TodoService) ShareController {
+	return &shareController{todoService: service}
 }
 
-func (ctrl *ShareController) ShareGroup(c *gin.Context) {
+func (ctrl *shareController) ShareGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -48,7 +57,7 @@ func (ctrl *ShareController) ShareGroup(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"success": true, "message": "Group shared successfully", "data": dto.MapGroupShare(share)})
 }
 
-func (ctrl *ShareController) RemoveShare(c *gin.Context) {
+func (ctrl *shareController) RemoveShare(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -78,7 +87,7 @@ func (ctrl *ShareController) RemoveShare(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Share removed successfully", "data": nil})
 }
 
-func (ctrl *ShareController) UpdateSharePermission(c *gin.Context) {
+func (ctrl *shareController) UpdateSharePermission(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -110,7 +119,7 @@ func (ctrl *ShareController) UpdateSharePermission(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Share permission updated successfully", "data": nil})
 }
 
-func (ctrl *ShareController) GetGroupMembers(c *gin.Context) {
+func (ctrl *shareController) GetGroupMembers(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -133,7 +142,7 @@ func (ctrl *ShareController) GetGroupMembers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Group members fetched successfully", "data": dto.MapGroupShareList(members)})
 }
 
-func (ctrl *ShareController) GetSharedGroups(c *gin.Context) {
+func (ctrl *shareController) GetSharedGroups(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -161,7 +170,7 @@ func (ctrl *ShareController) GetSharedGroups(c *gin.Context) {
 	})
 }
 
-func (ctrl *ShareController) SearchUsers(c *gin.Context) {
+func (ctrl *shareController) SearchUsers(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))

@@ -111,7 +111,7 @@ func (r *todoRepository) FindGroupByID(ctx context.Context, id uint, userID uint
 }
 
 func (r *todoRepository) FindSubtasksByGroupID(ctx context.Context, groupID uint, userID uint) ([]models.Todo, error) {
-	rows, err := r.q.GetSubtasksByParentAndUser(ctx, uint32(groupID), uint32(userID))
+	rows, err := r.q.GetSubtasksByParentID(ctx, uint32(groupID))
 	if err != nil {
 		return nil, err
 	}

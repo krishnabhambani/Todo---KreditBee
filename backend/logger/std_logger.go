@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -44,23 +45,23 @@ func format(level, msg string, fields []Field) string {
 	return b.String()
 }
 
-func (l *stdLogger) Info(msg string, fields ...Field) {
+func (l *stdLogger) Info(ctx context.Context, msg string, fields ...Field) {
 	l.infoLog.Println(format("INFO ", msg, fields))
 }
 
-func (l *stdLogger) Warn(msg string, fields ...Field) {
+func (l *stdLogger) Warn(ctx context.Context, msg string, fields ...Field) {
 	l.warnLog.Println(format("WARN ", msg, fields))
 }
 
-func (l *stdLogger) Error(msg string, fields ...Field) {
+func (l *stdLogger) Error(ctx context.Context, msg string, fields ...Field) {
 	l.errorLog.Println(format("ERROR", msg, fields))
 }
 
-func (l *stdLogger) Debug(msg string, fields ...Field) {
+func (l *stdLogger) Debug(ctx context.Context, msg string, fields ...Field) {
 	l.debugLog.Println(format("DEBUG", msg, fields))
 }
 
-func (l *stdLogger) Fatal(msg string, fields ...Field) {
+func (l *stdLogger) Fatal(ctx context.Context, msg string, fields ...Field) {
 	l.fatalLog.Println(format("FATAL", msg, fields))
 	os.Exit(1)
 }

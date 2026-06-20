@@ -22,18 +22,18 @@ func ConnectDatabase(cfg config.Config, log logger.Logger) *sql.DB {
 
 	sqlDB, err := sql.Open("mysql", dsn)
 	if err != nil {
-		log.Fatal("failed to open MySQL connection", logger.F("error", err))
+		log.Fatal(context.Background(), "failed to open MySQL connection", logger.F("error", err))
 	}
 
 	if err = sqlDB.PingContext(context.Background()); err != nil {
-		log.Fatal("failed to ping MySQL — check credentials and host", logger.F("error", err))
+		log.Fatal(context.Background(), "failed to ping MySQL — check credentials and host", logger.F("error", err))
 	}
 
 	if err = runMigrations(sqlDB, log); err != nil {
-		log.Fatal("schema migration failed", logger.F("error", err))
+		log.Fatal(context.Background(), "schema migration failed", logger.F("error", err))
 	}
 
-	log.Info("MySQL database connected and migrated successfully",
+	log.Info(context.Background(), "MySQL database connected and migrated successfully",
 		logger.F("host", cfg.GetDBHost()),
 		logger.F("db", cfg.GetDBName()),
 	)
@@ -118,7 +118,7 @@ func runMigrations(db *sql.DB, log logger.Logger) error {
 	}
 	for _, stmt := range indexes {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			log.Debug("index already exists or creation skipped", logger.F("stmt", stmt))
+			log.Debug(ctx, "index already exists or creation skipped", logger.F("stmt", stmt))
 		}
 	}
 

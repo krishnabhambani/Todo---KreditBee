@@ -21,7 +21,7 @@ func LoggerMiddleware(log logger.Logger) gin.HandlerFunc {
 			path = path + "?" + raw
 		}
 
-		log.Info("http request",
+		log.Info(c.Request.Context(), "http request",
 			logger.F("status", c.Writer.Status()),
 			logger.F("latency", time.Since(start)),
 			logger.F("ip", c.ClientIP()),

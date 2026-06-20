@@ -10,15 +10,23 @@ import (
 	"github.com/todo-app/backend/services"
 )
 
-type GroupController struct {
+type GroupController interface {
+	CreateGroup(c *gin.Context)
+	GetGroups(c *gin.Context)
+	GetGroupByID(c *gin.Context)
+	UpdateGroup(c *gin.Context)
+	DeleteGroup(c *gin.Context)
+}
+
+type groupController struct {
 	todoService services.TodoService
 }
 
-func NewGroupController(service services.TodoService) *GroupController {
-	return &GroupController{todoService: service}
+func NewGroupController(service services.TodoService) GroupController {
+	return &groupController{todoService: service}
 }
 
-func (ctrl *GroupController) CreateGroup(c *gin.Context) {
+func (ctrl *groupController) CreateGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -40,7 +48,7 @@ func (ctrl *GroupController) CreateGroup(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"success": true, "message": "Group created successfully", "data": dto.MapTodo(group)})
 }
 
-func (ctrl *GroupController) GetGroups(c *gin.Context) {
+func (ctrl *groupController) GetGroups(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -68,7 +76,7 @@ func (ctrl *GroupController) GetGroups(c *gin.Context) {
 	})
 }
 
-func (ctrl *GroupController) GetGroupByID(c *gin.Context) {
+func (ctrl *groupController) GetGroupByID(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -91,7 +99,7 @@ func (ctrl *GroupController) GetGroupByID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Group retrieved", "data": dto.MapTodo(group)})
 }
 
-func (ctrl *GroupController) UpdateGroup(c *gin.Context) {
+func (ctrl *groupController) UpdateGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -119,7 +127,7 @@ func (ctrl *GroupController) UpdateGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Group updated successfully", "data": dto.MapTodo(group)})
 }
 
-func (ctrl *GroupController) DeleteGroup(c *gin.Context) {
+func (ctrl *groupController) DeleteGroup(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))

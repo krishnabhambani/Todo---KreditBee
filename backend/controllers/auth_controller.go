@@ -10,25 +10,31 @@ import (
 	"github.com/todo-app/backend/services"
 )
 
-type AuthController struct {
+type AuthController interface {
+	Register(c *gin.Context)
+	Login(c *gin.Context)
+	UpdatePassword(c *gin.Context)
+}
+
+type authController struct {
 	authService services.AuthService
 	log         logger.Logger
 }
 
 // NewAuthController injects both the auth service and the structured logger.
-func NewAuthController(service services.AuthService, log logger.Logger) *AuthController {
-	return &AuthController{authService: service, log: log}
+func NewAuthController(service services.AuthService, log logger.Logger) AuthController {
+	return &authController{authService: service, log: log}
 }
 
 // Register handles user registration
-func (ctrl *AuthController) Register(c *gin.Context) {
+func (ctrl *authController) Register(c *gin.Context) {
 	var req dto.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(apperrors.NewBadRequest("invalid request payload"))
 		return
 	}
 
-	ctrl.log.Info("register attempt", logger.F("email", req.Email))
+	ctrl.log.Info(c.Request.Context(), "register attempt", logger.F("email", req.Email))
 
 	user, err := ctrl.authService.Register(c.Request.Context(), req)
 	if err != nil {
@@ -36,7 +42,7 @@ func (ctrl *AuthController) Register(c *gin.Context) {
 		return
 	}
 
-	ctrl.log.Info("register success", logger.F("email", req.Email), logger.F("userID", user.ID))
+	ctrl.log.Info(c.Request.Context(), "register success", logger.F("email", req.Email), logger.F("userID", user.ID))
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"message": "User registered successfully",
@@ -45,14 +51,14 @@ func (ctrl *AuthController) Register(c *gin.Context) {
 }
 
 // Login handles user authentication
-func (ctrl *AuthController) Login(c *gin.Context) {
+func (ctrl *authController) Login(c *gin.Context) {
 	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(apperrors.NewBadRequest("email and password are required"))
 		return
 	}
 
-	ctrl.log.Info("login attempt", logger.F("email", req.Email))
+	ctrl.log.Info(c.Request.Context(), "login attempt", logger.F("email", req.Email))
 
 	token, user, err := ctrl.authService.Login(c.Request.Context(), req)
 	if err != nil {
@@ -60,7 +66,7 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 		return
 	}
 
-	ctrl.log.Info("login success", logger.F("email", req.Email))
+	ctrl.log.Info(c.Request.Context(), "login success", logger.F("email", req.Email))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Login successful",
@@ -71,7 +77,7 @@ func (ctrl *AuthController) Login(c *gin.Context) {
 	})
 }
 
-func (ctrl *AuthController) UpdatePassword(c *gin.Context) {
+func (ctrl *authController) UpdatePassword(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -84,14 +90,14 @@ func (ctrl *AuthController) UpdatePassword(c *gin.Context) {
 		return
 	}
 
-	ctrl.log.Info("update password attempt", logger.F("userID", userID))
+	ctrl.log.Info(c.Request.Context(), "update password attempt", logger.F("userID", userID))
 
 	if err := ctrl.authService.UpdatePassword(c.Request.Context(), userID.(uint), req); err != nil {
 		c.Error(err)
 		return
 	}
 
-	ctrl.log.Info("update password success", logger.F("userID", userID))
+	ctrl.log.Info(c.Request.Context(), "update password success", logger.F("userID", userID))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Password updated successfully",

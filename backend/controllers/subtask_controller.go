@@ -11,15 +11,23 @@ import (
 	"github.com/todo-app/backend/services"
 )
 
-type SubtaskController struct {
+type SubtaskController interface {
+	GetSubtasks(c *gin.Context)
+	CreateSubtask(c *gin.Context)
+	UpdateSubtask(c *gin.Context)
+	DeleteSubtask(c *gin.Context)
+	ToggleCompleteSubtask(c *gin.Context)
+}
+
+type subtaskController struct {
 	todoService services.TodoService
 }
 
-func NewSubtaskController(service services.TodoService) *SubtaskController {
-	return &SubtaskController{todoService: service}
+func NewSubtaskController(service services.TodoService) SubtaskController {
+	return &subtaskController{todoService: service}
 }
 
-func (ctrl *SubtaskController) GetSubtasks(c *gin.Context) {
+func (ctrl *subtaskController) GetSubtasks(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -50,7 +58,7 @@ func (ctrl *SubtaskController) GetSubtasks(c *gin.Context) {
 	})
 }
 
-func (ctrl *SubtaskController) CreateSubtask(c *gin.Context) {
+func (ctrl *subtaskController) CreateSubtask(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -90,7 +98,7 @@ func (ctrl *SubtaskController) CreateSubtask(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"success": true, "message": "Subtask created successfully", "data": dto.MapTodo(subtask)})
 }
 
-func (ctrl *SubtaskController) UpdateSubtask(c *gin.Context) {
+func (ctrl *subtaskController) UpdateSubtask(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -119,7 +127,7 @@ func (ctrl *SubtaskController) UpdateSubtask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Subtask updated successfully", "data": dto.MapTodo(subtask)})
 }
 
-func (ctrl *SubtaskController) DeleteSubtask(c *gin.Context) {
+func (ctrl *subtaskController) DeleteSubtask(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))
@@ -142,7 +150,7 @@ func (ctrl *SubtaskController) DeleteSubtask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Subtask deleted successfully", "data": nil})
 }
 
-func (ctrl *SubtaskController) ToggleCompleteSubtask(c *gin.Context) {
+func (ctrl *subtaskController) ToggleCompleteSubtask(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
 		c.Error(apperrors.NewUnauthorized("unauthorized"))

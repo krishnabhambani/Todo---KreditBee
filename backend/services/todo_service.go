@@ -226,7 +226,7 @@ func (s *todoService) GetGroups(ctx context.Context, userID uint, search string,
 // GetGroupByID fetches details for a specific group (if authorized)
 func (s *todoService) GetGroupByID(ctx context.Context, id uint, userID uint) (*models.Todo, error) {
 	// Fetch the group without ownership filter (to allow shared access)
-	group, err := s.todoRepo.FindByID(ctx, id)
+	group, err := s.todoRepo.FindGroupByID(ctx, id, userID)
 	if err != nil {
 		return nil, apperrors.NewNotFound("group not found")
 	}

@@ -6,65 +6,83 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config is the application configuration contract.
-// Consumers depend on this interface, never on the concrete struct,
-// which makes test-time substitution straightforward.
-type Config interface {
-	GetDBHost() string
-	GetDBPort() string
-	GetDBUser() string
-	GetDBPassword() string
-	GetDBName() string
-	GetJWTSecret() string
-	GetPort() string
+// Config holds all application configuration organized by domain.
+type Config struct {
+	db     *databaseConfig
+	jwt    *jwtConfig
+	server *serverConfig
 }
 
-// appConfig is the production implementation of Config.
-// It is unexported — callers receive it only as the Config interface.
-type appConfig struct {
-	dbHost     string
-	dbPort     string
-	dbUser     string
-	dbPassword string
-	dbName     string
-	jwtSecret  string
-	port       string
+// ─────────────────────────────────────────────────────────────
+// Database Configuration
+// ─────────────────────────────────────────────────────────────
+
+type databaseConfig struct {
+	host     string
+	port     string
+	user     string
+	password string
+	name     string
 }
 
-func (c *appConfig) GetDBHost() string     { return c.dbHost }
-func (c *appConfig) GetDBPort() string     { return c.dbPort }
-func (c *appConfig) GetDBUser() string     { return c.dbUser }
-func (c *appConfig) GetDBPassword() string { return c.dbPassword }
-func (c *appConfig) GetDBName() string     { return c.dbName }
-func (c *appConfig) GetJWTSecret() string  { return c.jwtSecret }
-func (c *appConfig) GetPort() string       { return c.port }
+func (c *Config) GetDBHost() string     { return c.db.host }
+func (c *Config) GetDBPort() string     { return c.db.port }
+func (c *Config) GetDBUser() string     { return c.db.user }
+func (c *Config) GetDBPassword() string { return c.db.password }
+func (c *Config) GetDBName() string     { return c.db.name }
+
+// ─────────────────────────────────────────────────────────────
+// JWT Configuration
+// ─────────────────────────────────────────────────────────────
+
+type jwtConfig struct {
+	secret string
+}
+
+const jwtDefaultSecret = "default_secret_key"
+
+func (c *Config) GetJWTSecret() string { return c.jwt.secret }
+
+// JWTDefaultSecret returns the default (insecure) JWT secret value.
+// Used by main.go to detect when a real secret has not been configured.
+func JWTDefaultSecret() string { return jwtDefaultSecret }
+
+// ─────────────────────────────────────────────────────────────
+// Server Configuration
+// ─────────────────────────────────────────────────────────────
+
+type serverConfig struct {
+	port string
+}
+
+func (c *Config) GetPort() string { return c.server.port }
+
+// ─────────────────────────────────────────────────────────────
+// Config Initialization
+// ─────────────────────────────────────────────────────────────
 
 // LoadConfig reads environment variables (from .env file if present) and
-// returns an immutable Config value. The caller owns the returned value —
-// there is no package-level global.
-
-func LoadConfig() Config {
+// returns a Config value with all domain-specific configuration loaded.
+func LoadConfig() *Config {
 	// Attempt to load .env — ignore error (env may be injected directly in containers)
 	_ = godotenv.Load()
 
-	return &appConfig{
-		dbHost:     getEnv("DB_HOST", "localhost"),
-		dbPort:     getEnv("DB_PORT", "3306"),
-		dbUser:     getEnv("DB_USER", "root"),
-		dbPassword: getEnv("DB_PASSWORD", ""),
-		dbName:     getEnv("DB_NAME", "tododb"),
-		jwtSecret:  getEnv("JWT_SECRET", defaultJWTSecret),
-		port:       getEnv("PORT", "8080"),
+	return &Config{
+		db: &databaseConfig{
+			host:     getEnv("DB_HOST", "localhost"),
+			port:     getEnv("DB_PORT", "3306"),
+			user:     getEnv("DB_USER", "root"),
+			password: getEnv("DB_PASSWORD", ""),
+			name:     getEnv("DB_NAME", "tododb"),
+		},
+		jwt: &jwtConfig{
+			secret: getEnv("JWT_SECRET", jwtDefaultSecret),
+		},
+		server: &serverConfig{
+			port: getEnv("PORT", "8080"),
+		},
 	}
 }
-
-// defaultJWTSecret is exported as an unexported constant so main.go can
-// compare against it to emit the production warning without hard-coding the string.
-const defaultJWTSecret = "default_secret_key"
-
-// DefaultJWTSecret returns the default (insecure) JWT secret value.
-// main.go uses this to detect when a real secret has not been configured.
-func DefaultJWTSecret() string { return defaultJWTSecret }
 
 func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {

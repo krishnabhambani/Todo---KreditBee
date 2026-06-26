@@ -1,4 +1,4 @@
-package routes
+package app
 
 import (
 	"database/sql"
@@ -13,9 +13,8 @@ import (
 	"github.com/todo-app/backend/services"
 )
 
-// SetupRouter wires all dependencies and registers all routes.
-// cfg and log are the two root dependencies injected from main.
-func SetupRouter(cfg config.Config, log logger.Logger, db *sql.DB) *gin.Engine {
+// NewRouter wires all dependencies and registers all routes.
+func NewRouter(cfg *config.Config, log logger.Logger, db *sql.DB) *gin.Engine {
 	router := gin.New()
 
 	// 404 and 405 handlers

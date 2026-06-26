@@ -16,7 +16,7 @@ import (
 
 // ConnectDatabase opens and validates a MySQL connection, then runs
 // all startup DDL (CREATE TABLE IF NOT EXISTS + legacy cleanup).
-func ConnectDatabase(cfg config.Config, log logger.Logger) *sql.DB {
+func ConnectDatabase(cfg *config.Config, log logger.Logger) *sql.DB {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		cfg.GetDBUser(), cfg.GetDBPassword(), cfg.GetDBHost(), cfg.GetDBPort(), cfg.GetDBName())
 

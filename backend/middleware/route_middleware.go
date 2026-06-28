@@ -4,16 +4,13 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/todo-app/backend/response"
 )
 
 // NotFoundHandler responds with a consistent JSON payload for unknown routes.
 func NotFoundHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"message": "Route not found",
-			"data":    nil,
-		})
+		response.Error(c, http.StatusNotFound, "Route not found", nil)
 	}
 }
 
@@ -21,10 +18,6 @@ func NotFoundHandler() gin.HandlerFunc {
 // request method is not allowed for the matched route.
 func MethodNotAllowedHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusMethodNotAllowed, gin.H{
-			"success": false,
-			"message": "Method not allowed",
-			"data":    nil,
-		})
+		response.Error(c, http.StatusMethodNotAllowed, "Method not allowed", nil)
 	}
 }

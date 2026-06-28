@@ -6,80 +6,77 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config holds all application configuration organized by domain.
-type Config struct {
-	db     *databaseConfig
-	jwt    *jwtConfig
-	server *serverConfig
+// Config defines the interface for application configuration.
+type Config interface {
+	DB() DatabaseConfig
+	JWT() JWTConfig
+	Server() ServerConfig
 }
 
 // ─────────────────────────────────────────────────────────────
 // Database Configuration
 // ─────────────────────────────────────────────────────────────
 
-type databaseConfig struct {
-	host     string
-	port     string
-	user     string
-	password string
-	name     string
+type DatabaseConfig struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	Name     string
 }
-
-func (c *Config) GetDBHost() string     { return c.db.host }
-func (c *Config) GetDBPort() string     { return c.db.port }
-func (c *Config) GetDBUser() string     { return c.db.user }
-func (c *Config) GetDBPassword() string { return c.db.password }
-func (c *Config) GetDBName() string     { return c.db.name }
 
 // ─────────────────────────────────────────────────────────────
 // JWT Configuration
 // ─────────────────────────────────────────────────────────────
 
-type jwtConfig struct {
-	secret string
+type JWTConfig struct {
+	Secret string
 }
 
 const jwtDefaultSecret = "default_secret_key"
 
-func (c *Config) GetJWTSecret() string { return c.jwt.secret }
-
 // JWTDefaultSecret returns the default (insecure) JWT secret value.
-// Used by main.go to detect when a real secret has not been configured.
 func JWTDefaultSecret() string { return jwtDefaultSecret }
 
 // ─────────────────────────────────────────────────────────────
 // Server Configuration
 // ─────────────────────────────────────────────────────────────
 
-type serverConfig struct {
-	port string
+type ServerConfig struct {
+	Port string
 }
 
-func (c *Config) GetPort() string { return c.server.port }
-
 // ─────────────────────────────────────────────────────────────
-// Config Initialization
+// Config Implementation
 // ─────────────────────────────────────────────────────────────
 
-// LoadConfig reads environment variables (from .env file if present) and
-// returns a Config value with all domain-specific configuration loaded.
-func LoadConfig() *Config {
-	// Attempt to load .env — ignore error (env may be injected directly in containers)
+type appConfig struct {
+	db     DatabaseConfig
+	jwt    JWTConfig
+	server ServerConfig
+}
+
+func (c *appConfig) DB() DatabaseConfig   { return c.db }
+func (c *appConfig) JWT() JWTConfig       { return c.jwt }
+func (c *appConfig) Server() ServerConfig { return c.server }
+
+// LoadConfig reads environment variables and returns a Config interface implementation.
+func LoadConfig() Config {
 	_ = godotenv.Load()
 
-	return &Config{
-		db: &databaseConfig{
-			host:     getEnv("DB_HOST", "localhost"),
-			port:     getEnv("DB_PORT", "3306"),
-			user:     getEnv("DB_USER", "root"),
-			password: getEnv("DB_PASSWORD", ""),
-			name:     getEnv("DB_NAME", "tododb"),
+	return &appConfig{
+		db: DatabaseConfig{
+			Host:     getEnv("DB_HOST", "localhost"),
+			Port:     getEnv("DB_PORT", "3306"),
+			User:     getEnv("DB_USER", "root"),
+			Password: getEnv("DB_PASSWORD", ""),
+			Name:     getEnv("DB_NAME", "tododb"),
 		},
-		jwt: &jwtConfig{
-			secret: getEnv("JWT_SECRET", jwtDefaultSecret),
+		jwt: JWTConfig{
+			Secret: getEnv("JWT_SECRET", jwtDefaultSecret),
 		},
-		server: &serverConfig{
-			port: getEnv("PORT", "8080"),
+		server: ServerConfig{
+			Port: getEnv("PORT", "8080"),
 		},
 	}
 }

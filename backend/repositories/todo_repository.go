@@ -20,10 +20,10 @@ type TodoRepository interface {
 }
 
 type todoRepository struct {
-	q *database.Queries
+	q database.Querier
 }
 
-func NewTodoRepository(q *database.Queries) TodoRepository {
+func NewTodoRepository(q database.Querier) TodoRepository {
 	return &todoRepository{q: q}
 }
 
@@ -32,9 +32,9 @@ func (r *todoRepository) Create(ctx context.Context, todo *models.Todo) error {
 		Title:        todo.Title,
 		Description:  todo.Description,
 		Completed:    todo.Completed,
-		DueDate:      database.ToNullTime(todo.DueDate),
+		DueDate:      ToNullTime(todo.DueDate),
 		UserID:       uint32(todo.UserID),
-		ParentTodoID: database.ToNullInt32(todo.ParentTodoID),
+		ParentTodoID: ToNullInt32(todo.ParentTodoID),
 	})
 	if err != nil {
 		return err
@@ -56,8 +56,10 @@ func (r *todoRepository) FindAllGroupsByUserID(ctx context.Context, userID uint,
 	}
 
 	rows, err := r.q.GetGroupsByUserID(ctx, database.GetGroupsByUserIDParams{
-		UserID: uint32(userID),
-		Search: searchTerm,
+		UserID:      uint32(userID),
+		Column2:     searchTerm,
+		Title:       searchTerm,
+		Description: searchTerm,
 	})
 	if err != nil {
 		return nil, err
@@ -76,7 +78,8 @@ func (r *todoRepository) FindAllGroupsByUserID(ctx context.Context, userID uint,
 	for _, row := range rows {
 		group := toModelTodo(row)
 
-		subtaskRows, _ := r.q.GetSubtasksByParentID(ctx, row.ID)
+		id := uint(row.ID)
+		subtaskRows, _ := r.q.GetSubtasksByParentID(ctx, ToNullInt32(&id))
 		group.Subtasks = toModelTodos(subtaskRows)
 
 		if owner != nil {
@@ -101,7 +104,7 @@ func (r *todoRepository) FindGroupByID(ctx context.Context, id uint, userID uint
 	}
 	group := toModelTodo(row)
 
-	subtaskRows, _ := r.q.GetSubtasksByParentID(ctx, row.ID)
+	subtaskRows, _ := r.q.GetSubtasksByParentID(ctx, ToNullInt32(&id))
 	group.Subtasks = toModelTodos(subtaskRows)
 
 	if u, err := r.q.GetUserByID(ctx, row.UserID); err == nil {
@@ -111,7 +114,7 @@ func (r *todoRepository) FindGroupByID(ctx context.Context, id uint, userID uint
 }
 
 func (r *todoRepository) FindSubtasksByGroupID(ctx context.Context, groupID uint, userID uint) ([]models.Todo, error) {
-	rows, err := r.q.GetSubtasksByParentID(ctx, uint32(groupID))
+	rows, err := r.q.GetSubtasksByParentID(ctx, ToNullInt32(&groupID))
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +135,7 @@ func (r *todoRepository) Update(ctx context.Context, todo *models.Todo) error {
 		Title:       todo.Title,
 		Description: todo.Description,
 		Completed:   todo.Completed,
-		DueDate:     database.ToNullTime(todo.DueDate),
+		DueDate:     ToNullTime(todo.DueDate),
 		ID:          uint32(todo.ID),
 	})
 }

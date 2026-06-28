@@ -85,6 +85,37 @@
   background-color: var(--color-danger-light);
 }
 
+.passwordInputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.passwordInputWrapper input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.passwordToggleBtn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
+  transition: var(--transition-fast);
+}
+
+.passwordToggleBtn:hover {
+  color: var(--text-primary);
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
 .inputGroup input.inputCredentialError {
   border-color: var(--color-danger);
   background-color: var(--color-danger-light);

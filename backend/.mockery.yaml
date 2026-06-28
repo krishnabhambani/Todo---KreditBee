@@ -1,0 +1,20 @@
+with-expecter: true
+packages:
+  github.com/todo-app/backend/repositories:
+    interfaces:
+      UserRepository:
+      TodoRepository:
+      GroupShareRepository:
+  github.com/todo-app/backend/services:
+    interfaces:
+      AuthService:
+      TodoService:
+  github.com/todo-app/backend/controllers:
+    interfaces:
+      AuthController:
+      GroupController:
+      SubtaskController:
+      ShareController:
+  github.com/todo-app/backend/database:
+    interfaces:
+      Querier:

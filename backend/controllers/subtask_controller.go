@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/todo-app/backend/apperrors"
 	"github.com/todo-app/backend/controllers/dto"
+	"github.com/todo-app/backend/response"
 	"github.com/todo-app/backend/services"
 )
 
@@ -30,14 +31,14 @@ func NewSubtaskController(service services.TodoService) SubtaskController {
 func (ctrl *subtaskController) GetSubtasks(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.Error(apperrors.NewUnauthorized("unauthorized"))
+		response.HandleError(c, apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
 	groupIDStr := c.Param("id")
 	groupID, err := strconv.ParseUint(groupIDStr, 10, 32)
 	if err != nil {
-		c.Error(apperrors.NewBadRequest("invalid group ID"))
+		response.HandleError(c, apperrors.NewBadRequest("invalid group ID"))
 		return
 	}
 
@@ -46,22 +47,17 @@ func (ctrl *subtaskController) GetSubtasks(c *gin.Context) {
 
 	subtasks, meta, err := ctrl.todoService.GetSubtasks(c.Request.Context(), uint(groupID), userID.(uint), page, limit)
 	if err != nil {
-		c.Error(err)
+		response.HandleError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Subtasks fetched successfully",
-		"data":    dto.MapTodos(subtasks),
-		"meta":    meta,
-	})
+	response.SuccessWithMeta(c, http.StatusOK, "Subtasks fetched successfully", dto.MapTodos(subtasks), meta)
 }
 
 func (ctrl *subtaskController) CreateSubtask(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.Error(apperrors.NewUnauthorized("unauthorized"))
+		response.HandleError(c, apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
@@ -69,20 +65,20 @@ func (ctrl *subtaskController) CreateSubtask(c *gin.Context) {
 	groupIDStr := c.Param("id")
 	groupID, err := strconv.ParseUint(groupIDStr, 10, 32)
 	if err != nil {
-		c.Error(apperrors.NewBadRequest("invalid group ID"))
+		response.HandleError(c, apperrors.NewBadRequest("invalid group ID"))
 		return
 	}
 
 	var req dto.CreateSubtaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(apperrors.NewBadRequest("invalid request payload"))
+		response.HandleError(c, err)
 		return
 	}
 
 	// Normalize and validate title explicitly (reject blank/whitespace-only titles)
 	req.Title = strings.TrimSpace(req.Title)
 	if req.Title == "" {
-		c.Error(apperrors.NewBadRequest("title is required"))
+		response.HandleError(c, apperrors.NewBadRequest("title is required"))
 		return
 	}
 
@@ -91,84 +87,84 @@ func (ctrl *subtaskController) CreateSubtask(c *gin.Context) {
 
 	subtask, err := ctrl.todoService.CreateSubtask(c.Request.Context(), req, userID.(uint))
 	if err != nil {
-		c.Error(err)
+		response.HandleError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"success": true, "message": "Subtask created successfully", "data": dto.MapTodo(subtask)})
+	response.Success(c, http.StatusCreated, "Subtask created successfully", dto.MapTodo(subtask))
 }
 
 func (ctrl *subtaskController) UpdateSubtask(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.Error(apperrors.NewUnauthorized("unauthorized"))
+		response.HandleError(c, apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		c.Error(apperrors.NewBadRequest("invalid subtask ID"))
+		response.HandleError(c, apperrors.NewBadRequest("invalid subtask ID"))
 		return
 	}
 
 	var req dto.UpdateSubtaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(apperrors.NewBadRequest("title is required"))
+		response.HandleError(c, err)
 		return
 	}
 
 	subtask, err := ctrl.todoService.UpdateSubtask(c.Request.Context(), uint(id), req, userID.(uint))
 	if err != nil {
-		c.Error(err)
+		response.HandleError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Subtask updated successfully", "data": dto.MapTodo(subtask)})
+	response.Success(c, http.StatusOK, "Subtask updated successfully", dto.MapTodo(subtask))
 }
 
 func (ctrl *subtaskController) DeleteSubtask(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.Error(apperrors.NewUnauthorized("unauthorized"))
+		response.HandleError(c, apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		c.Error(apperrors.NewBadRequest("invalid subtask ID"))
+		response.HandleError(c, apperrors.NewBadRequest("invalid subtask ID"))
 		return
 	}
 
 	err = ctrl.todoService.DeleteSubtask(c.Request.Context(), uint(id), userID.(uint))
 	if err != nil {
-		c.Error(err)
+		response.HandleError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Subtask deleted successfully", "data": nil})
+	response.Success(c, http.StatusOK, "Subtask deleted successfully", nil)
 }
 
 func (ctrl *subtaskController) ToggleCompleteSubtask(c *gin.Context) {
 	userID, exists := c.Get("userID")
 	if !exists {
-		c.Error(apperrors.NewUnauthorized("unauthorized"))
+		response.HandleError(c, apperrors.NewUnauthorized("unauthorized"))
 		return
 	}
 
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
-		c.Error(apperrors.NewBadRequest("invalid subtask ID"))
+		response.HandleError(c, apperrors.NewBadRequest("invalid subtask ID"))
 		return
 	}
 
 	subtask, err := ctrl.todoService.ToggleCompleteSubtask(c.Request.Context(), uint(id), userID.(uint))
 	if err != nil {
-		c.Error(err)
+		response.HandleError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Subtask status updated", "data": dto.MapTodo(subtask)})
+	response.Success(c, http.StatusOK, "Subtask status updated", dto.MapTodo(subtask))
 }

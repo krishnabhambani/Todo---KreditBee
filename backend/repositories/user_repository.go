@@ -18,10 +18,10 @@ type UserRepository interface {
 }
 
 type userRepository struct {
-	q *database.Queries
+	q database.Querier
 }
 
-func NewUserRepository(q *database.Queries) UserRepository {
+func NewUserRepository(q database.Querier) UserRepository {
 	return &userRepository{q: q}
 }
 
@@ -65,7 +65,11 @@ func (r *userRepository) FindByID(ctx context.Context, id uint) (*models.User, e
 
 func (r *userRepository) SearchUsers(ctx context.Context, query string, excludeUserID uint) ([]models.User, error) {
 	term := "%" + query + "%"
-	rows, err := r.q.SearchUsers(ctx, uint32(excludeUserID), term)
+	rows, err := r.q.SearchUsers(ctx, database.SearchUsersParams{
+		ID:    uint32(excludeUserID),
+		Name:  term,
+		Email: term,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +108,7 @@ func toModelTodo(t database.Todo) models.Todo {
 		Title:       t.Title,
 		Description: t.Description,
 		Completed:   t.Completed,
-		DueDate:     database.NullTimeTo(t.DueDate),
+		DueDate:     NullTimeTo(t.DueDate),
 		UserID:      uint(t.UserID),
 		CreatedAt:   t.CreatedAt,
 		UpdatedAt:   t.UpdatedAt,

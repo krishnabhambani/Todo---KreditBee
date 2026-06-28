@@ -1,20 +1,17 @@
 package app
 
 import (
-	"database/sql"
 
 	"github.com/gin-gonic/gin"
-	"github.com/todo-app/backend/config"
 	"github.com/todo-app/backend/controllers"
 	"github.com/todo-app/backend/database"
-	"github.com/todo-app/backend/logger"
 	"github.com/todo-app/backend/middleware"
 	"github.com/todo-app/backend/repositories"
 	"github.com/todo-app/backend/services"
 )
 
 // NewRouter wires all dependencies and registers all routes.
-func NewRouter(cfg *config.Config, log logger.Logger, db *sql.DB) *gin.Engine {
+func NewRouter(c Container) *gin.Engine {
 	router := gin.New()
 
 	// 404 and 405 handlers
@@ -25,45 +22,45 @@ func NewRouter(cfg *config.Config, log logger.Logger, db *sql.DB) *gin.Engine {
 	router.NoMethod(middleware.MethodNotAllowedHandler())
 
 	// Global Middlewares — inject logger and jwt secret
-	router.Use(middleware.LoggerMiddleware(log))
-	router.Use(middleware.ErrorHandler(log))
+	router.Use(middleware.LoggerMiddleware(c.Logger()))
+	router.Use(middleware.ErrorHandler(c.Logger()))
 
 	// CORS Middleware
-	router.Use(func(c *gin.Context) {
-		origin := c.Request.Header.Get("Origin")
+	router.Use(func(ctx *gin.Context) {
+		origin := ctx.Request.Header.Get("Origin")
 		if origin != "" {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			ctx.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 		} else {
-			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+			ctx.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		}
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, PATCH, DELETE")
+		ctx.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		ctx.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, PATCH, DELETE")
 
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
+		if ctx.Request.Method == "OPTIONS" {
+			ctx.AbortWithStatus(204)
 			return
 		}
-		c.Next()
+		ctx.Next()
 	})
 
 	// Dependency Injection — build one Queries instance, share across all repos.
-	queries := database.New(db)
+	queries := database.New(c.DB())
 
 	userRepo := repositories.NewUserRepository(queries)
 	todoRepo := repositories.NewTodoRepository(queries)
 	groupShareRepo := repositories.NewGroupShareRepository(queries)
 
-	authService := services.NewAuthService(userRepo, cfg.GetJWTSecret())
+	authService := services.NewAuthService(userRepo, c.Config().JWT().Secret)
 	todoService := services.NewTodoService(todoRepo, groupShareRepo, userRepo)
 
-	authController := controllers.NewAuthController(authService, log)
+	authController := controllers.NewAuthController(authService)
 	groupController := controllers.NewGroupController(todoService)
 	subtaskController := controllers.NewSubtaskController(todoService)
 	shareController := controllers.NewShareController(todoService)
 
 	// Auth middleware is constructed with the JWT secret from config
-	authMW := middleware.AuthMiddleware(cfg.GetJWTSecret())
+	authMW := middleware.AuthMiddleware(c.Config().JWT().Secret)
 
 	// API Group
 	api := router.Group("/api")

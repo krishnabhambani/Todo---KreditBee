@@ -10,15 +10,18 @@ import (
 )
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	log := logger.NewLogger()
-	log.Info(context.Background(), "starting Todo Application backend")
+	log.Info(ctx, "starting Todo Application backend")
 
 	cfg := config.LoadConfig()
-	if cfg.GetJWTSecret() == config.JWTDefaultSecret() {
-		log.Warn(context.Background(), "using default JWT secret — set JWT_SECRET env variable before deploying to production")
+	if cfg.JWT().Secret == config.JWTDefaultSecret() {
+		log.Warn(ctx, "using default JWT secret — set JWT_SECRET env variable before deploying to production")
 	}
 
-	db := database.ConnectDatabase(cfg, log)
+	db := database.ConnectDatabase(ctx, cfg, log)
 	application := app.NewApp(cfg, log, db)
-	application.Run()
+	application.Run(ctx)
 }

@@ -19,10 +19,10 @@ type GroupShareRepository interface {
 }
 
 type groupShareRepository struct {
-	q *database.Queries
+	q database.Querier
 }
 
-func NewGroupShareRepository(q *database.Queries) GroupShareRepository {
+func NewGroupShareRepository(q database.Querier) GroupShareRepository {
 	return &groupShareRepository{q: q}
 }
 
@@ -45,11 +45,17 @@ func (r *groupShareRepository) Create(ctx context.Context, share *models.GroupSh
 }
 
 func (r *groupShareRepository) Delete(ctx context.Context, groupID uint, userID uint) error {
-	return r.q.DeleteGroupShare(ctx, uint32(groupID), uint32(userID))
+	return r.q.DeleteGroupShare(ctx, database.DeleteGroupShareParams{
+		GroupID:          uint32(groupID),
+		SharedWithUserID: uint32(userID),
+	})
 }
 
 func (r *groupShareRepository) FindShare(ctx context.Context, groupID uint, sharedWithUserID uint) (*models.GroupShare, error) {
-	row, err := r.q.GetGroupShare(ctx, uint32(groupID), uint32(sharedWithUserID))
+	row, err := r.q.GetGroupShare(ctx, database.GetGroupShareParams{
+		GroupID:          uint32(groupID),
+		SharedWithUserID: uint32(sharedWithUserID),
+	})
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -103,7 +109,8 @@ func (r *groupShareRepository) FindSharedGroupsByUserID(ctx context.Context, use
 		}
 		group := toModelTodo(groupRow)
 
-		subtaskRows, _ := r.q.GetSubtasksByParentID(ctx, groupRow.ID)
+		id := uint(groupRow.ID)
+		subtaskRows, _ := r.q.GetSubtasksByParentID(ctx, ToNullInt32(&id))
 		group.Subtasks = toModelTodos(subtaskRows)
 
 		if ownerRow, err := r.q.GetUserByID(ctx, groupRow.UserID); err == nil {

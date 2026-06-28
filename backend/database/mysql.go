@@ -16,26 +16,26 @@ import (
 
 // ConnectDatabase opens and validates a MySQL connection, then runs
 // all startup DDL (CREATE TABLE IF NOT EXISTS + legacy cleanup).
-func ConnectDatabase(cfg *config.Config, log logger.Logger) *sql.DB {
+func ConnectDatabase(ctx context.Context, cfg config.Config, log logger.Logger) *sql.DB {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.GetDBUser(), cfg.GetDBPassword(), cfg.GetDBHost(), cfg.GetDBPort(), cfg.GetDBName())
+		cfg.DB().User, cfg.DB().Password, cfg.DB().Host, cfg.DB().Port, cfg.DB().Name)
 
 	sqlDB, err := sql.Open("mysql", dsn)
 	if err != nil {
-		log.Fatal(context.Background(), "failed to open MySQL connection", logger.F("error", err))
+		log.Fatal(ctx, "failed to open MySQL connection", logger.F("error", err))
 	}
 
-	if err = sqlDB.PingContext(context.Background()); err != nil {
-		log.Fatal(context.Background(), "failed to ping MySQL — check credentials and host", logger.F("error", err))
+	if err = sqlDB.PingContext(ctx); err != nil {
+		log.Fatal(ctx, "failed to ping MySQL — check credentials and host", logger.F("error", err))
 	}
 
-	if err = runMigrations(sqlDB, log); err != nil {
-		log.Fatal(context.Background(), "schema migration failed", logger.F("error", err))
+	if err = runMigrations(ctx, sqlDB, log); err != nil {
+		log.Fatal(ctx, "schema migration failed", logger.F("error", err))
 	}
 
-	log.Info(context.Background(), "MySQL database connected and migrated successfully",
-		logger.F("host", cfg.GetDBHost()),
-		logger.F("db", cfg.GetDBName()),
+	log.Info(ctx, "MySQL database connected and migrated successfully",
+		logger.F("host", cfg.DB().Host),
+		logger.F("db", cfg.DB().Name),
 	)
 
 	return sqlDB
@@ -52,9 +52,7 @@ func CloseDatabase(db *sql.DB) error {
 // runMigrations executes legacy cleanup and CREATE TABLE IF NOT EXISTS DDL.
 // Errors on index creation are suppressed — MySQL raises an error if the
 // index already exists, which is expected on subsequent startups.
-func runMigrations(db *sql.DB, log logger.Logger) error {
-	ctx := context.Background()
-
+func runMigrations(ctx context.Context, db *sql.DB, log logger.Logger) error {
 	// ── Legacy cleanup (idempotent — ignore errors if objects don't exist) ──
 	legacyCleanup := []string{
 		"ALTER TABLE todos DROP FOREIGN KEY fk_todos_groups",

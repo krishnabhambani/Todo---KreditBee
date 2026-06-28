@@ -2,7 +2,7 @@ import React, { useState, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import Toast from '../../components/Toast/Toast';
-import { CheckSquare, LogIn, AlertCircle } from 'lucide-react';
+import { CheckSquare, LogIn, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import styles from './LoginPage.module.css';
 
 const LoginPage = () => {
@@ -14,6 +14,7 @@ const LoginPage = () => {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [credentialError, setCredentialError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const validate = () => {
     const tempErrors = {};
@@ -97,15 +98,25 @@ const LoginPage = () => {
 
           <div className={styles.inputGroup}>
             <label>Password</label>
-            <input
-              type="password"
-              name="password"
-              placeholder="••••••••"
-              value={formData.password}
-              onChange={handleChange}
-              className={`${errors.password ? styles.inputError : ''} ${credentialError ? styles.inputCredentialError : ''}`}
-              disabled={loading}
-            />
+            <div className={styles.passwordInputWrapper}>
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                placeholder="••••••••"
+                value={formData.password}
+                onChange={handleChange}
+                className={`${errors.password ? styles.inputError : ''} ${credentialError ? styles.inputCredentialError : ''}`}
+                disabled={loading}
+              />
+              <button 
+                type="button"
+                className={styles.passwordToggleBtn}
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
             {errors.password && <span className={styles.errorText}>{errors.password}</span>}
           </div>
 
